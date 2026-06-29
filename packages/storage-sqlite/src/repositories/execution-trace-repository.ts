@@ -23,12 +23,13 @@ import {
   type ExecutionTraceRow,
   type ExecutionTraceStepRow,
 } from "../schema/index.js";
+import type * as sqliteSchema from "../schema/index.js";
 
 const defaultRecentLimit = 20;
 const maxRecentLimit = 100;
 
 export class SqliteExecutionTraceRepository implements ExecutionTraceRepository {
-  constructor(private readonly db: BetterSQLite3Database) {}
+  constructor(private readonly db: BetterSQLite3Database<typeof sqliteSchema>) {}
 
   async create(input: CreateExecutionTraceInput): Promise<ExecutionTrace> {
     const timestamp = nowIso();

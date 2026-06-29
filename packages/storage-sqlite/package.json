@@ -20,7 +20,7 @@
     "typecheck": "pnpm --filter @pap/storage build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint .",
     "test": "pnpm run test:integration",
-    "test:integration": "pnpm --filter @pap/testing build && pnpm run build && node --test test/*.test.mjs",
+    "test:integration": "pnpm --filter @pap/testing build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm run build && node --test test/*.test.mjs",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "pnpm run build && node dist/migrations.js"
   },
@@ -32,7 +32,9 @@
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
+    "@pap/capability-echo": "workspace:*",
     "@pap/testing": "workspace:*",
+    "@pap/runtime": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "drizzle-kit": "^0.31.10"
   }

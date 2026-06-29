@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { echoCapability } from "@pap/capability-echo";
+import { createRuntime } from "@pap/runtime";
 import { createExecutionId, createTraceStepId, nowIso } from "@pap/shared";
 import { createTemporarySqliteDatabase } from "@pap/testing";
 import {
@@ -195,6 +197,39 @@ test("SqliteExecutionTraceRepository lists recent traces by start time with filt
       alphaCompleted.map((trace) => trace.id),
       ["exec_new"],
     );
+  } finally {
+    close();
+  }
+});
+
+test("createRuntime executes echo and persists a SQLite trace", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-runtime-echo-");
+  const { repository, close } = createMigratedRepository(temporaryDatabase.databaseUrl);
+
+  try {
+    const runtime = createRuntime({
+      traceRepository: repository,
+      capabilities: [echoCapability],
+    });
+
+    const result = await runtime.execute({
+      capabilityId: "capability.echo",
+      input: { message: "  hello \n\t runtime  " },
+      source: "cli",
+    });
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.data.message, "hello runtime");
+
+    const trace = await repository.getById(result.executionId);
+
+    assert.equal(trace?.id, result.traceId);
+    assert.equal(trace?.capabilityId, "capability.echo");
+    assert.equal(trace?.status, "completed");
+    assert.equal(trace?.steps.length, 1);
+    assert.equal(trace?.steps[0]?.sequence, 0);
+    assert.equal(trace?.steps[0]?.kind, "workflow");
+    assert.equal(trace?.steps[0]?.name, "echo.normalize");
   } finally {
     close();
   }

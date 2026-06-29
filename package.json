@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "turbo run dev --parallel",
+    "dev:web": "pnpm --filter @pap/web dev",
     "build": "turbo run build",
     "typecheck": "tsc --noEmit -p tsconfig.json && turbo run typecheck",
     "lint": "biome lint . && turbo run lint",
