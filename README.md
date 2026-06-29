@@ -6,7 +6,7 @@ Turborepo, strict TypeScript, and Biome.
 
 ## Current Scope
 
-This repository currently implements only PAP-001, PAP-002, and PAP-003 from
+This repository currently implements PAP-001 through PAP-007 from
 `docs/17-phase-0-1-backlog.md`.
 
 Included now:
@@ -15,13 +15,18 @@ Included now:
 - Turborepo task configuration.
 - Strict TypeScript base configuration.
 - Biome formatting and linting configuration.
+- Shared workspace package foundations:
+  - `@pap/contracts`
+  - `@pap/shared`
+  - `@pap/storage`
+  - `@pap/testing`
 - Project documentation and generic coding-agent rules.
 
 Not included yet:
 
 - Application code.
-- Workspace packages.
-- Database code or migrations.
+- Runtime package implementation.
+- Concrete SQLite storage adapter, database code, or migrations.
 - Docker configuration.
 - Runtime capabilities.
 
@@ -49,7 +54,7 @@ pnpm verify
 - `pnpm format:check` checks formatting without writing.
 - `pnpm lint` runs Biome linting, then package lint tasks when packages exist.
 - `pnpm typecheck` checks the root TypeScript config, then package typecheck tasks when packages exist.
-- `pnpm test` runs the empty root Node test baseline, then package tests when packages exist.
+- `pnpm test` runs package tests through Turbo.
 - `pnpm build` runs configured Turbo build tasks when packages exist.
 - `pnpm verify` runs the baseline local quality gate.
 - `pnpm run ci` is an alias for `pnpm verify`; use `pnpm run ci` because `pnpm ci`
@@ -60,7 +65,8 @@ pnpm verify
 - `docs/` contains product, architecture, backlog, and implementation planning docs.
 - `docs/plans/` records accepted implementation plans before execution.
 - `agents/` contains generic coding-agent rules and reusable agent skills for working on this repository.
-- `apps/` and `packages/` are reserved for later backlog tickets and are not created in this slice.
+- `packages/` contains the initial shared packages for contracts, utilities, storage interfaces, and testing helpers.
+- `apps/`, `packages/runtime`, concrete storage adapters, and capability packages are reserved for later backlog tickets.
 
 ## Planning Trace
 

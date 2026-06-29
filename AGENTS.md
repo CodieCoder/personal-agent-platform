@@ -16,17 +16,18 @@ Accepted ADRs win unless a documented revisit trigger applies.
 
 ## Current Implementation Scope
 
-The current implemented slice is PAP-001 through PAP-003 only:
+The current implemented slice is PAP-001 through PAP-007 only:
 
 - Root repository metadata.
 - pnpm workspace configuration.
 - Turbo task configuration.
 - Biome formatting and linting.
 - Strict TypeScript base configuration.
+- Shared workspace packages for contracts, utilities, storage interfaces, and testing helpers.
 - Generic coding-agent docs under `agents/`.
 
-Do not add application code, database code, Docker, runtime packages, or capabilities until
-the corresponding backlog ticket is active.
+Do not add application code, concrete database code, Docker, runtime implementation packages,
+or capabilities until the corresponding backlog ticket is active.
 
 ## Planning Trace
 

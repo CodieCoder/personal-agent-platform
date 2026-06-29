@@ -5,5 +5,10 @@
     "types": ["node"]
   },
   "files": [],
-  "references": []
+  "references": [
+    { "path": "./packages/contracts" },
+    { "path": "./packages/shared" },
+    { "path": "./packages/storage" },
+    { "path": "./packages/testing" }
+  ]
 }
