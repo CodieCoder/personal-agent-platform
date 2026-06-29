@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build and cache output
+dist/
+build/
+.output/
+.turbo/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS and editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Local runtime data is introduced by later storage tickets.
+data/
