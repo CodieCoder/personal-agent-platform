@@ -19,6 +19,8 @@ export const serverEnvironmentSchema = z
     PAP_ALLOW_REMOTE_ACCESS: booleanEnvironmentSchema(false),
     PAP_AUTH_MODE: authModeSchema.default("none"),
     PAP_TRUSTED_PROXY: booleanEnvironmentSchema(false),
+    PAP_DATABASE_URL: z.string().min(1).default("file:./data/pap.db"),
+    PAP_DATA_DIR: z.string().min(1).default("./data"),
     PAP_LOG_LEVEL: z
       .enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"])
       .default("info"),

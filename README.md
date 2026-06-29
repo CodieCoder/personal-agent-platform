@@ -6,7 +6,7 @@ Turborepo, strict TypeScript, and Biome.
 
 ## Current Scope
 
-This repository currently implements PAP-001 through PAP-007 from
+This repository currently implements PAP-001 through PAP-011 from
 `docs/17-phase-0-1-backlog.md`.
 
 Included now:
@@ -19,14 +19,15 @@ Included now:
   - `@pap/contracts`
   - `@pap/shared`
   - `@pap/storage`
+  - `@pap/storage-sqlite`
   - `@pap/testing`
+- SQLite trace storage with Drizzle migrations for execution traces and trace steps.
 - Project documentation and generic coding-agent rules.
 
 Not included yet:
 
 - Application code.
 - Runtime package implementation.
-- Concrete SQLite storage adapter, database code, or migrations.
 - Docker configuration.
 - Runtime capabilities.
 
@@ -45,6 +46,7 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm db:migrate
 pnpm verify
 ```
 
@@ -56,6 +58,8 @@ pnpm verify
 - `pnpm typecheck` checks the root TypeScript config, then package typecheck tasks when packages exist.
 - `pnpm test` runs package tests through Turbo.
 - `pnpm build` runs configured Turbo build tasks when packages exist.
+- `pnpm db:generate` generates Drizzle SQL migrations for `@pap/storage-sqlite`.
+- `pnpm db:migrate` applies committed SQLite migrations.
 - `pnpm verify` runs the baseline local quality gate.
 - `pnpm run ci` is an alias for `pnpm verify`; use `pnpm run ci` because `pnpm ci`
   is a pnpm install command.
@@ -65,8 +69,8 @@ pnpm verify
 - `docs/` contains product, architecture, backlog, and implementation planning docs.
 - `docs/plans/` records accepted implementation plans before execution.
 - `agents/` contains generic coding-agent rules and reusable agent skills for working on this repository.
-- `packages/` contains the initial shared packages for contracts, utilities, storage interfaces, and testing helpers.
-- `apps/`, `packages/runtime`, concrete storage adapters, and capability packages are reserved for later backlog tickets.
+- `packages/` contains the initial shared packages for contracts, utilities, storage interfaces, SQLite trace storage, and testing helpers.
+- `apps/`, `packages/runtime`, and capability packages are reserved for later backlog tickets.
 
 ## Planning Trace
 

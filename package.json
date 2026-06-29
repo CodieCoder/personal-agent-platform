@@ -16,6 +16,8 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "turbo run test",
+    "db:generate": "pnpm --filter @pap/storage-sqlite db:generate",
+    "db:migrate": "pnpm --filter @pap/storage-sqlite db:migrate",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "ci": "pnpm run verify"
   },

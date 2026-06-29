@@ -30,7 +30,7 @@ For early bootstrap work, do not add items before their backlog ticket is active
 
 - Application code.
 - Workspace packages outside the active ticket range.
-- Concrete database code.
+- Database code outside the active ticket range.
 - Docker configuration.
 - Runtime capabilities.
 - Product runtime skills.
