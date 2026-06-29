@@ -1,0 +1,8 @@
+{
+  "id": "skill.echo",
+  "version": "0.1.0",
+  "name": "Echo Capability Skill",
+  "entryFile": "SKILL.md",
+  "capabilityId": "capability.echo",
+  "description": "Deterministic workflow instructions for the core echo capability."
+}

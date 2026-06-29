@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Message"
+  short_description: "Write detailed commit titles and bodies."
+  default_prompt: "Create a robust commit title and description for these changes."

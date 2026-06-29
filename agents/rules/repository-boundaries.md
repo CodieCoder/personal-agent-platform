@@ -2,7 +2,7 @@
 
 ## Implemented Scope
 
-PAP-001 through PAP-007 currently include:
+PAP-001 through PAP-021 currently include:
 
 - Root metadata.
 - Workspace tooling.
@@ -13,7 +13,16 @@ PAP-001 through PAP-007 currently include:
   - `@pap/contracts`
   - `@pap/shared`
   - `@pap/storage`
+  - `@pap/storage-sqlite`
   - `@pap/testing`
+  - `@pap/runtime`
+  - `@pap/capability-echo`
+  - `@pap/web`
+- Drizzle and `better-sqlite3` persistence for execution traces and trace steps.
+- In-memory runtime capability registry, trace writer, runtime execution service, and
+  dependency-injected runtime factory.
+- Core echo capability with package-local runtime skill files.
+- TanStack Start web app for echo execution and persisted trace inspection.
 - Documentation and generic coding-agent guidance.
 
 ## Active Ticket Rule
@@ -24,12 +33,12 @@ Only implement the active backlog ticket range requested by the user.
 
 Do not add these before their backlog tickets are active:
 
-- Application code.
+- Application code beyond the active web echo and trace screens.
 - Workspace packages beyond the active ticket range.
-- Concrete database code, storage adapters, or migrations.
+- Database tables, storage adapters, or migrations beyond execution traces and trace steps.
 - Docker files or Compose services.
-- Runtime implementation packages.
-- Runtime capabilities.
+- Runtime capabilities beyond the active ticket range.
+- Tool registry, skill loader, approval flow, memory services, or UI beyond the active ticket range.
 - External service credentials or integrations.
 - Product runtime skills under root `skills/`.
 

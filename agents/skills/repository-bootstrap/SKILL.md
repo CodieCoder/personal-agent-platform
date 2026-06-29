@@ -28,12 +28,12 @@ Use this skill for PAP bootstrap tickets that affect:
 
 For early bootstrap work, do not add items before their backlog ticket is active:
 
-- Application code.
+- Application code beyond the active ticket range.
 - Workspace packages outside the active ticket range.
-- Concrete database code.
+- Database code outside the active ticket range.
 - Docker configuration.
-- Runtime capabilities.
-- Product runtime skills.
+- Runtime capabilities outside the active ticket range.
+- Product runtime skills outside their owning capability packages.
 
 ## Expected Output
 

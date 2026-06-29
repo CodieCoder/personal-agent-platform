@@ -1,6 +1,7 @@
 import type {
   CapabilityId,
   ExecutionId,
+  ExecutionTraceStepId,
   ExecutionStatus,
   ExecutionTrace,
   ExecutionTraceStep,
@@ -20,7 +21,7 @@ export type CreateExecutionTraceInput = {
 };
 
 export type AppendExecutionTraceStepInput = {
-  id: string;
+  id: ExecutionTraceStepId;
   executionId: ExecutionId;
   sequence: number;
   kind: TraceStepKind;
