@@ -11,12 +11,17 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "dev:web": "pnpm --filter @pap/web dev",
+    "dev:worker": "pnpm --filter @pap/worker dev",
     "build": "turbo run build",
-    "typecheck": "tsc --noEmit -p tsconfig.json && turbo run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json && tsc --noEmit -p qa/runner/tsconfig.json && turbo run typecheck",
     "lint": "biome lint . && turbo run lint",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "test": "turbo run test",
+    "test": "pnpm run test:unit && pnpm run test:integration",
+    "test:unit": "pnpm run build && vitest run --config vitest.workspace.ts --project=unit",
+    "test:integration": "pnpm run build && vitest run --config vitest.workspace.ts --project=integration",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:qa": "tsx qa/runner/src/index.ts",
     "db:generate": "pnpm --filter @pap/storage-sqlite db:generate",
     "db:migrate": "pnpm --filter @pap/storage-sqlite db:migrate",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
@@ -24,8 +29,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.1",
+    "@playwright/test": "^1.57.0",
+    "@qutecoder/qa-intel": "0.1.0",
     "@types/node": "24.13.2",
+    "tsx": "^4.22.4",
     "turbo": "2.10.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^4.0.15"
   }
 }

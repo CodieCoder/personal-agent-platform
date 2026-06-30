@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { test } from "vitest";
 import { z } from "zod";
 import {
   capabilityDefinitionSchema,
@@ -11,6 +14,8 @@ import {
   parsePlatformError,
   platformErrorSchema,
 } from "../dist/index.js";
+
+const fixtureDirectory = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
 test("executionStatusSchema accepts the initial execution statuses", () => {
   assert.equal(executionStatusSchema.parse("running"), "running");
@@ -54,6 +59,33 @@ test("capabilityManifestSchema validates required runtime metadata", () => {
   assert.deepEqual(manifest.allowedTools, []);
   assert.deepEqual(manifest.permissions, []);
   assert.deepEqual(manifest.sideEffects, ["none"]);
+  assert.equal(
+    capabilityManifestSchema.safeParse({
+      id: "bad id",
+      version: "0.1.0",
+      name: "Echo",
+      description: "Returns normalized text input.",
+      skill: {
+        id: "skill.echo",
+        version: "0.1.0",
+        path: "./skills/echo",
+      },
+      inputSchemaId: "capability.echo.input.v1",
+      outputSchemaId: "capability.echo.output.v1",
+      approvalPolicyId: "approval.none",
+      memoryPolicyId: "memory.none",
+      trustLevel: "core",
+    }).success,
+    false,
+  );
+  assert.equal(
+    capabilityManifestSchema.safeParse({
+      id: "capability.echo",
+      version: "0.1.0",
+      name: "Echo",
+    }).success,
+    false,
+  );
 });
 
 test("capabilityExecutionRequestSchema validates capability execution requests", () => {
@@ -68,6 +100,14 @@ test("capabilityExecutionRequestSchema validates capability execution requests",
   assert.deepEqual(request.context, { initiatedBy: "user" });
   assert.equal(
     capabilityExecutionRequestSchema.safeParse({ input: {}, source: "cli" }).success,
+    false,
+  );
+  assert.equal(
+    capabilityExecutionRequestSchema.safeParse({
+      capabilityId: "capability echo",
+      input: {},
+      source: "cli",
+    }).success,
     false,
   );
 });
@@ -178,3 +218,15 @@ test("capabilityExecutionContextSchema validates runtime context shape", () => {
 
   assert.equal(context.capability.id, "capability.echo");
 });
+
+test("contract JSON fixtures remain valid", async () => {
+  const manifest = await loadFixture("manifest.echo.json");
+  const result = await loadFixture("execution-result.completed.json");
+
+  assert.equal(capabilityManifestSchema.parse(manifest).id, "capability.echo");
+  assert.equal(capabilityExecutionResultSchema.parse(result).status, "completed");
+});
+
+async function loadFixture(fileName) {
+  return JSON.parse(await readFile(join(fixtureDirectory, fileName), "utf8"));
+}

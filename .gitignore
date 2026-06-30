@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 
 # Environment
 .env
@@ -13,6 +14,10 @@ build/
 .turbo/
 *.tsbuildinfo
 coverage/
+test-results/
+.qa-results/
+qa/results/
+qa/screenshots/
 
 # Logs
 *.log

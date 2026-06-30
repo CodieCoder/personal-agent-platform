@@ -1,0 +1,16 @@
+{
+  "id": "capability.echo",
+  "version": "0.1.0",
+  "name": "Echo",
+  "description": "Returns normalized text input.",
+  "skill": {
+    "id": "skill.echo",
+    "version": "0.1.0",
+    "path": "./skills/echo"
+  },
+  "inputSchemaId": "capability.echo.input.v1",
+  "outputSchemaId": "capability.echo.output.v1",
+  "approvalPolicyId": "approval.none",
+  "memoryPolicyId": "memory.none",
+  "trustLevel": "core"
+}

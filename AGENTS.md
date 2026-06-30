@@ -16,7 +16,7 @@ Accepted ADRs win unless a documented revisit trigger applies.
 
 ## Current Implementation Scope
 
-The current implemented slice is PAP-001 through PAP-021:
+The current implemented slice is PAP-001 through PAP-027:
 
 - Root repository metadata.
 - pnpm workspace configuration.
@@ -29,11 +29,15 @@ The current implemented slice is PAP-001 through PAP-021:
   dependency-injected runtime factory.
 - Core echo capability package with package-local runtime skill files.
 - TanStack Start web app for running echo and inspecting persisted execution traces.
+- Standalone worker app with startup logging and a health command.
+- Vitest unit and integration test baseline.
+- Playwright echo smoke test.
+- QA-Intel echo feature executed through `@qutecoder/qa-intel` with a local app launcher.
 - Generic coding-agent docs under `agents/`.
 
-Do not add Docker, worker code, additional runtime capabilities, tool registry, skill loader,
-approval, memory, research, email, document, vector, source-profile persistence, or UI beyond the
-PAP-018 to PAP-021 echo and trace screens until the corresponding backlog ticket is active.
+Do not add Docker, real worker scheduling, additional runtime capabilities, tool registry, skill
+loader, approval, memory, research, email, document, vector, source-profile persistence, or UI beyond
+the PAP-018 to PAP-021 echo and trace screens until the corresponding backlog ticket is active.
 
 ## Planning Trace
 

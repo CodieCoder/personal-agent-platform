@@ -207,6 +207,8 @@ personal-agent-platform/
 ├── qa/
 │ ├── features/
 │ │ └── runtime-echo.feature
+│ ├── runner/
+│ │ └── src/
 │ ├── fixtures/
 │ └── README.md
 │
@@ -327,15 +329,15 @@ Implements storage interfaces only.
 "dev:web": "pnpm --filter @pap/web dev",
 "dev:worker": "pnpm --filter @pap/worker dev",
 "build": "turbo run build",
-"typecheck": "turbo run typecheck",
-"lint": "turbo run lint",
+"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json && tsc --noEmit -p qa/runner/tsconfig.json && turbo run typecheck",
+"lint": "biome lint . && turbo run lint",
 "format": "biome format --write .",
 "format:check": "biome format .",
-"test": "turbo run test",
-"test:unit": "turbo run test:unit",
-"test:integration": "turbo run test:integration",
-"test:e2e": "playwright test",
-"test:qa": "pnpm --filter @pap/qa-intel-runner test",
+"test": "pnpm run test:unit && pnpm run test:integration",
+"test:unit": "pnpm run build && vitest run --config vitest.workspace.ts --project=unit",
+"test:integration": "pnpm run build && vitest run --config vitest.workspace.ts --project=integration",
+"test:e2e": "playwright test --config e2e/playwright.config.ts",
+"test:qa": "tsx qa/runner/src/index.ts",
 "db:generate": "pnpm --filter @pap/storage-sqlite db:generate",
 "db:migrate": "pnpm --filter @pap/storage-sqlite db:migrate",
 "db:studio": "pnpm --filter @pap/storage-sqlite db:studio",
@@ -348,6 +350,7 @@ Implements storage interfaces only.
 "devDependencies": {
 "@biomejs/biome": "^1.9.0",
 "@playwright/test": "^1.55.0",
+"@qutecoder/qa-intel": "^0.1.0",
 "@types/node": "^22.0.0",
 "turbo": "^2.5.0",
 "typescript": "^5.8.0",
@@ -783,16 +786,29 @@ qa/features/runtime-echo.feature
 Scenario:
 
 Feature: Runtime echo execution
-Scenario: User runs the echo capability and sees its trace
-Given the Personal Agent Platform web app is running
-When the user enters "Hello Personal Agent"
-And the user runs the echo capability
-Then the user should see "Hello Personal Agent"
-And the execution status should be "completed"
-And the trace should include "validate input"
-And the trace should include "finalize execution"
+Scenario: User runs the echo capability and sees the echoed result
+Given I navigate to "/"
+When I wait for css:[data-runtime-ready='true']
+And I type "Hello Personal Agent" into the field "Message"
+And I click the button "Run echo"
+And I wait for css:.result-success
+Then css:.result-success should contain text "Completed"
+And css:.result-success should contain text "Hello Personal Agent"
+
+Scenario: User opens the latest echo execution and sees its trace
+Given I navigate to "/"
+When I wait for the link "Latest execution detail"
+And I click the link "Latest execution detail"
+And I wait for the heading "Execution detail"
+Then I should see the heading "Execution detail"
+And css:.page-header should contain text "completed"
+And css:.trace-list should contain text "validate input"
+And css:.trace-list should contain text "finalize execution"
 
 QA-Intel should validate behavior through the UI and trace output.
+Use `@qutecoder/qa-intel` for strict Gherkin compilation, browser execution, JSON diagnostics,
+screenshots, and SQLite run history. Keep a repo-local runner only for starting the local app with an
+isolated test database and passing the feature to QA-Intel.
 
 It should not replace direct Vitest coverage for runtime code.
 

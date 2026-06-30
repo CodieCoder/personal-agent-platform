@@ -14,6 +14,7 @@ Use this skill for PAP bootstrap tickets that affect:
 - Turbo tasks.
 - TypeScript configuration.
 - Biome configuration.
+- Vitest, Playwright, or QA-Intel bootstrap commands.
 - README, AGENTS.md, or generic coding-agent rules.
 
 ## Workflow

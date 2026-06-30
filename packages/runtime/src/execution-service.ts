@@ -73,6 +73,14 @@ export class RuntimeExecutionService {
         details: { issues: summarizeValidationIssues(parsedInput.error) },
       }).platformError;
 
+      await trace.addStep({
+        kind: "validation",
+        name: "validate input",
+        status: "failed",
+        summary: "Capability input schema rejected the request.",
+        errorCode: error.code,
+        errorMessage: error.message,
+      });
       await trace.fail(error);
       return this.buildResult({
         executionId,
@@ -81,6 +89,13 @@ export class RuntimeExecutionService {
         error,
       });
     }
+
+    await trace.addStep({
+      kind: "validation",
+      name: "validate input",
+      status: "completed",
+      summary: "Capability input schema accepted the request.",
+    });
 
     try {
       const output = await capability.execute(
@@ -102,6 +117,14 @@ export class RuntimeExecutionService {
           details: { issues: summarizeValidationIssues(parsedOutput.error) },
         }).platformError;
 
+        await trace.addStep({
+          kind: "validation",
+          name: "validate output",
+          status: "failed",
+          summary: "Capability output schema rejected the result.",
+          errorCode: error.code,
+          errorMessage: error.message,
+        });
         await trace.fail(error);
         return this.buildResult({
           executionId,
@@ -111,6 +134,18 @@ export class RuntimeExecutionService {
         });
       }
 
+      await trace.addStep({
+        kind: "validation",
+        name: "validate output",
+        status: "completed",
+        summary: "Capability output schema accepted the result.",
+      });
+      await trace.addStep({
+        kind: "workflow",
+        name: "finalize execution",
+        status: "completed",
+        summary: "Runtime finalized the execution trace.",
+      });
       await trace.complete();
       return this.buildResult({
         executionId,

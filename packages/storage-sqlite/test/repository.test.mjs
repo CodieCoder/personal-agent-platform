@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { echoCapability } from "@pap/capability-echo";
+import { z } from "@pap/contracts";
 import { createRuntime } from "@pap/runtime";
 import { createExecutionId, createTraceStepId, nowIso } from "@pap/shared";
 import { createTemporarySqliteDatabase } from "@pap/testing";
@@ -226,10 +227,101 @@ test("createRuntime executes echo and persists a SQLite trace", async () => {
     assert.equal(trace?.id, result.traceId);
     assert.equal(trace?.capabilityId, "capability.echo");
     assert.equal(trace?.status, "completed");
-    assert.equal(trace?.steps.length, 1);
-    assert.equal(trace?.steps[0]?.sequence, 0);
-    assert.equal(trace?.steps[0]?.kind, "workflow");
-    assert.equal(trace?.steps[0]?.name, "echo.normalize");
+    assert.deepEqual(
+      trace?.steps.map((step) => step.name),
+      ["validate input", "echo.normalize", "validate output", "finalize execution"],
+    );
+    assert.deepEqual(
+      trace?.steps.map((step) => step.sequence),
+      [0, 1, 2, 3],
+    );
+  } finally {
+    close();
+  }
+});
+
+test("createRuntime persists failed validation traces for invalid echo input", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-runtime-invalid-");
+  const { repository, close } = createMigratedRepository(temporaryDatabase.databaseUrl);
+
+  try {
+    const runtime = createRuntime({
+      traceRepository: repository,
+      capabilities: [echoCapability],
+    });
+
+    const result = await runtime.execute({
+      capabilityId: "capability.echo",
+      input: { message: "   " },
+      source: "cli",
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.error.code, "CAPABILITY_INPUT_INVALID");
+
+    const trace = await repository.getById(result.executionId);
+
+    assert.equal(trace?.status, "failed");
+    assert.equal(trace?.errorCode, "CAPABILITY_INPUT_INVALID");
+    assert.deepEqual(
+      trace?.steps.map((step) => `${step.name}:${step.status}`),
+      ["validate input:failed"],
+    );
+  } finally {
+    close();
+  }
+});
+
+test("createRuntime does not create a SQLite trace for unknown capabilities", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-runtime-unknown-");
+  const { repository, close } = createMigratedRepository(temporaryDatabase.databaseUrl);
+
+  try {
+    const runtime = createRuntime({
+      traceRepository: repository,
+      capabilities: [],
+    });
+
+    const result = await runtime.execute({
+      capabilityId: "capability.echo",
+      input: { message: "hello" },
+      source: "cli",
+    });
+    const traces = await repository.listRecent();
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.error.code, "CAPABILITY_NOT_FOUND");
+    assert.deepEqual(traces, []);
+  } finally {
+    close();
+  }
+});
+
+test("createRuntime serializes unhandled capability errors safely in SQLite traces", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-runtime-error-");
+  const { repository, close } = createMigratedRepository(temporaryDatabase.databaseUrl);
+
+  try {
+    const runtime = createRuntime({
+      traceRepository: repository,
+      capabilities: [createThrowingCapability()],
+    });
+
+    const result = await runtime.execute({
+      capabilityId: "capability.boom",
+      input: { message: "hello" },
+      source: "cli",
+    });
+    const trace = await repository.getById(result.executionId);
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.error.code, "CAPABILITY_EXECUTION_FAILED");
+    assert.equal(result.error.message, "Capability capability.boom failed during execution.");
+    assert.equal(trace?.status, "failed");
+    assert.equal(trace?.errorCode, "CAPABILITY_EXECUTION_FAILED");
+    assert.equal(trace?.errorMessage, "Capability capability.boom failed during execution.");
+    assert.equal(JSON.stringify(result).includes("database password leaked"), false);
+    assert.equal(JSON.stringify(trace).includes("database password leaked"), false);
   } finally {
     close();
   }
@@ -247,5 +339,37 @@ function createRepository(databaseUrl) {
   return {
     repository,
     close: connection.close,
+  };
+}
+
+function createThrowingCapability() {
+  return {
+    manifest: {
+      id: "capability.boom",
+      version: "0.1.0",
+      name: "Boom",
+      description: "Throws during execution for integration testing.",
+      skill: {
+        id: "skill.boom",
+        version: "0.1.0",
+        path: "./skills/boom",
+      },
+      inputSchemaId: "capability.boom.input.v1",
+      outputSchemaId: "capability.boom.output.v1",
+      allowedTools: [],
+      allowedChildCapabilities: [],
+      supportedUiBlocks: [],
+      permissions: [],
+      sideEffects: ["none"],
+      approvalPolicyId: "approval.none",
+      memoryPolicyId: "memory.none",
+      trustLevel: "core",
+      tags: ["test"],
+    },
+    inputSchema: z.object({ message: z.string().min(1) }).strict(),
+    outputSchema: z.object({ message: z.string().min(1) }).strict(),
+    execute: async () => {
+      throw new Error("database password leaked in raw exception");
+    },
   };
 }

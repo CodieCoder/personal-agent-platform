@@ -31,6 +31,19 @@ pnpm typecheck
 pnpm test
 ```
 
+Browser and QA behavior checks are available as explicit commands:
+
+```sh
+pnpm test:e2e
+pnpm test:qa
+```
+
+`pnpm test:qa` starts the local web app with an isolated SQLite database, runs
+`qa/features/runtime-echo.feature` through `@qutecoder/qa-intel`, writes the latest JSON summary
+under `qa/results/`, and stores QA-Intel artifacts/history under `.qa-results/`.
+
+The baseline `pnpm verify` gate covers format, lint, typecheck, unit tests, and integration tests.
+
 ## Turbo
 
 Turbo owns package task orchestration once packages exist.

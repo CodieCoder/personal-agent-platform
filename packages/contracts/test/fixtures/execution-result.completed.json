@@ -1,0 +1,10 @@
+{
+  "executionId": "exec_fixture",
+  "traceId": "exec_fixture",
+  "capabilityId": "capability.echo",
+  "status": "completed",
+  "data": {
+    "message": "Hello Personal Agent",
+    "echoedAt": "2026-06-29T12:00:00.000Z"
+  }
+}

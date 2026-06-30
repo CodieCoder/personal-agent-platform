@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import {
   RecentExecutions,
@@ -28,6 +28,11 @@ function HomeRoute() {
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<EchoExecutionResult | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   async function submitEcho(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,7 +40,7 @@ function HomeRoute() {
     setResult(null);
 
     try {
-      const nextResult = await executeEcho({ data: { message } });
+      const nextResult = await executeEcho({ data: new FormData(event.currentTarget) });
       setResult(nextResult);
 
       if (nextResult.ok) {
@@ -70,7 +75,11 @@ function HomeRoute() {
             <h2 id="echo-form-title">Run echo</h2>
             <span>server function</span>
           </div>
-          <form className="echo-form" onSubmit={submitEcho}>
+          <form
+            className="echo-form"
+            data-runtime-ready={isHydrated ? "true" : "false"}
+            onSubmit={submitEcho}
+          >
             <div className="field-grid">
               <label htmlFor="echo-message">Message</label>
               <textarea

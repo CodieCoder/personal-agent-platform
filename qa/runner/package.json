@@ -1,0 +1,9 @@
+{
+  "name": "@pap/qa-intel-runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx src/index.ts"
+  }
+}

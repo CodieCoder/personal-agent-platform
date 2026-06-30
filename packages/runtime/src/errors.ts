@@ -67,7 +67,6 @@ export function toPlatformError(
     retryable: false,
     details: {
       errorName: serialized.name,
-      errorMessage: serialized.message,
       ...(serialized.code ? { errorCode: serialized.code } : {}),
     },
   });

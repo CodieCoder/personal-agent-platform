@@ -1,0 +1,30 @@
+{
+  "name": "@pap/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && tsx src/index.ts",
+    "start": "node dist/index.js",
+    "health": "pnpm run build && node dist/health.js",
+    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint ."
+  },
+  "dependencies": {
+    "@pap/capability-echo": "workspace:*",
+    "@pap/contracts": "workspace:*",
+    "@pap/runtime": "workspace:*",
+    "@pap/shared": "workspace:*",
+    "@pap/storage": "workspace:*",
+    "@pap/storage-sqlite": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.4"
+  }
+}

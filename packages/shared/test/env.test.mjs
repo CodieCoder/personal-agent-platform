@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { validateEnvironment } from "../dist/index.js";
 
 test("validateEnvironment accepts the local PAP environment", () => {

@@ -53,9 +53,13 @@ export function RecentExecutions({ executions }: { executions: RecentExecutionSu
 
   return (
     <ul className="recent-list">
-      {executions.map((execution) => (
+      {executions.map((execution, index) => (
         <li className="recent-item" key={execution.id}>
-          <Link to="/executions/$executionId" params={{ executionId: execution.id }}>
+          <Link
+            aria-label={index === 0 ? "Latest execution detail" : undefined}
+            to="/executions/$executionId"
+            params={{ executionId: execution.id }}
+          >
             <span className="recent-item-header">
               <span className="code-value">{execution.id}</span>
               <StatusPill status={execution.status} />
