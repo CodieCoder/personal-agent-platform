@@ -1,4 +1,4 @@
-import type { ExecutionStatus, ExecutionTrace } from "@pap/contracts";
+import type { ExecutionStatus, ExecutionTrace, ExecutionTraceListPage } from "@pap/contracts";
 
 export type SafeWebError = {
   code: string;
@@ -40,6 +40,7 @@ export type RecentExecutionSummary = {
   id: string;
   capabilityId: string;
   status: ExecutionStatus;
+  workspaceId?: string;
   startedAt: string;
   completedAt?: string;
   stepCount: number;
@@ -49,6 +50,16 @@ export type RecentExecutionsResult =
   | {
       ok: true;
       executions: RecentExecutionSummary[];
+    }
+  | {
+      ok: false;
+      error: SafeWebError;
+    };
+
+export type ExecutionHistoryResult =
+  | {
+      ok: true;
+      page: ExecutionTraceListPage;
     }
   | {
       ok: false;

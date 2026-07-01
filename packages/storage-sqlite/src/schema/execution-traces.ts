@@ -20,6 +20,7 @@ export const executionTraces = sqliteTable(
     index("execution_traces_started_at_idx").on(table.startedAt),
     index("execution_traces_status_idx").on(table.status),
     index("execution_traces_capability_id_idx").on(table.capabilityId),
+    index("execution_traces_workspace_started_at_idx").on(table.workspaceId, table.startedAt),
   ],
 );
 

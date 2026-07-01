@@ -1,13 +1,22 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import {
+  createSqliteDatabase,
+  runMigrations,
+  SqliteEpisodicMemoryRepository,
+  SqliteExecutionTraceRepository,
+  SqliteSemanticMemoryRepository,
+  SqliteWorkspaceRepository,
+} from "../../../packages/storage-sqlite/src/index.js";
+import { createMemoryService } from "../../../packages/memory/src/index.js";
 import { compileGherkin, runSuiteTool, type RunSuiteOutput } from "@qutecoder/qa-intel";
 
-const scenarioName = "runtime-echo";
+const suiteName = "pap-behavior";
 const port = 3101;
 const baseURL = `http://127.0.0.1:${port}`;
-const featurePath = resolve("qa/features/runtime-echo.feature");
+const featureDirectory = resolve("qa/features");
 const artifactDirectory = resolve(".qa-results/artifacts");
 const resultsDatabasePath = resolve(".qa-results/results.db");
 const resultDirectory = resolve("qa/results");
@@ -15,7 +24,7 @@ const resultDirectory = resolve("qa/results");
 type QaResult = {
   scenario: string;
   status: "passed" | "failed" | "error";
-  featurePath: string;
+  featurePaths: string[];
   artifactDirectory: string;
   resultsDatabasePath: string;
   qaIntel: RunSuiteOutput;
@@ -23,30 +32,44 @@ type QaResult = {
 };
 
 async function main(): Promise<void> {
-  const feature = await readFile(featurePath, "utf8");
-  const compiled = compileGherkin(feature, { sourceFile: featurePath });
+  const featurePaths = await listFeaturePaths();
+  const compiledContracts = [];
+  const compileDiagnostics = [];
 
-  if (compiled.contracts.length === 0 || compiled.errors.length > 0) {
+  for (const featurePath of featurePaths) {
+    const feature = await readFile(featurePath, "utf8");
+    const compiled = compileGherkin(feature, { sourceFile: featurePath });
+    compiledContracts.push(...compiled.contracts);
+
+    if (compiled.errors.length > 0 || compiled.warnings.length > 0) {
+      compileDiagnostics.push({
+        featurePath,
+        errors: compiled.errors,
+        warnings: compiled.warnings,
+      });
+    }
+  }
+
+  if (compiledContracts.length === 0 || compileDiagnostics.some((item) => item.errors.length > 0)) {
     const qaIntel: RunSuiteOutput = {
       ok: false,
       error: {
         code: "INVALID_INPUT",
-        message: "QA-Intel could not compile the runtime echo feature.",
+        message: "QA-Intel could not compile one or more feature files.",
         details: {
-          errors: compiled.errors,
-          warnings: compiled.warnings,
+          diagnostics: compileDiagnostics,
         },
       },
     };
 
     await writeResult({
-      scenario: scenarioName,
+      scenario: suiteName,
       status: "error",
-      featurePath,
+      featurePaths,
       artifactDirectory,
       resultsDatabasePath,
       qaIntel,
-      fixHint: "Update qa/features/runtime-echo.feature to strict QA-Intel Gherkin syntax.",
+      fixHint: "Update qa/features/*.feature to strict QA-Intel Gherkin syntax.",
     });
     process.stdout.write(`${JSON.stringify(qaIntel, null, 2)}\n`);
     process.exitCode = 2;
@@ -57,15 +80,18 @@ async function main(): Promise<void> {
   await mkdir(resultDirectory, { recursive: true });
 
   const dataDir = await mkdtemp(join(tmpdir(), "pap-qa-"));
-  const server = startWebServer(dataDir);
+  const databaseUrl = `file:${join(dataDir, "pap.db")}`;
+  const server = startWebServer({ dataDir, databaseUrl });
 
   try {
     await waitForServer(server);
+    await seedQaFixtures(databaseUrl);
+
     const qaIntel = await runSuiteTool({
       suite: {
-        name: scenarioName,
+        name: suiteName,
         baseUrl: baseURL,
-        contracts: compiled.contracts,
+        contracts: compiledContracts,
       },
       baseUrl: baseURL,
       artifactDir: artifactDirectory,
@@ -78,9 +104,9 @@ async function main(): Promise<void> {
     });
 
     await writeResult({
-      scenario: scenarioName,
+      scenario: suiteName,
       status: qaIntel.ok && qaIntel.data?.status === "passed" ? "passed" : "failed",
-      featurePath,
+      featurePaths,
       artifactDirectory,
       resultsDatabasePath,
       qaIntel,
@@ -88,7 +114,7 @@ async function main(): Promise<void> {
         ? {}
         : {
             fixHint:
-              "Inspect .qa-results artifacts, qa/results/runtime-echo.json, and the QA-Intel failure hints.",
+              "Inspect .qa-results artifacts, qa/results/pap-behavior.json, and QA-Intel diagnostics.",
           }),
     });
     process.stdout.write(`${JSON.stringify(qaIntel, null, 2)}\n`);
@@ -109,13 +135,13 @@ async function main(): Promise<void> {
     };
 
     await writeResult({
-      scenario: scenarioName,
+      scenario: suiteName,
       status: "error",
-      featurePath,
+      featurePaths,
       artifactDirectory,
       resultsDatabasePath,
       qaIntel,
-      fixHint: "Run pnpm test:e2e and inspect the echo form or execution trace rendering.",
+      fixHint: "Run pnpm test:e2e and inspect the execution history or Memory Explorer screens.",
     });
     process.stdout.write(`${JSON.stringify(qaIntel, null, 2)}\n`);
     process.exitCode = 1;
@@ -124,7 +150,19 @@ async function main(): Promise<void> {
   }
 }
 
-function startWebServer(dataDir: string): ChildProcessWithoutNullStreams {
+async function listFeaturePaths(): Promise<string[]> {
+  const entries = await readdir(featureDirectory);
+
+  return entries
+    .filter((entry) => entry.endsWith(".feature"))
+    .sort()
+    .map((entry) => join(featureDirectory, entry));
+}
+
+function startWebServer(input: {
+  dataDir: string;
+  databaseUrl: string;
+}): ChildProcessWithoutNullStreams {
   const server = spawn("pnpm", ["dev:web"], {
     cwd: process.cwd(),
     env: {
@@ -133,8 +171,8 @@ function startWebServer(dataDir: string): ChildProcessWithoutNullStreams {
       PAP_ENVIRONMENT: "test",
       PAP_BIND_HOST: "127.0.0.1",
       PAP_PORT: String(port),
-      PAP_DATABASE_URL: `file:${join(dataDir, "pap.db")}`,
-      PAP_DATA_DIR: dataDir,
+      PAP_DATABASE_URL: input.databaseUrl,
+      PAP_DATA_DIR: input.dataDir,
       PAP_LOG_LEVEL: "silent",
     },
   });
@@ -142,6 +180,109 @@ function startWebServer(dataDir: string): ChildProcessWithoutNullStreams {
   server.stdout.on("data", consumeServerOutput);
   server.stderr.on("data", consumeServerOutput);
   return server;
+}
+
+async function seedQaFixtures(databaseUrl: string): Promise<void> {
+  runMigrations({ databaseUrl });
+
+  const connection = createSqliteDatabase({ databaseUrl });
+  const traceRepository = new SqliteExecutionTraceRepository(connection.db);
+  const workspaceRepository = new SqliteWorkspaceRepository(connection.db);
+  const semanticMemoryRepository = new SqliteSemanticMemoryRepository(connection.db);
+  const episodicMemoryRepository = new SqliteEpisodicMemoryRepository(connection.db);
+  const memoryService = createMemoryService({
+    semanticMemoryRepository,
+    episodicMemoryRepository,
+    executionTraceRepository: traceRepository,
+  });
+
+  try {
+    await workspaceRepository.create({
+      id: "workspace_qa_alpha",
+      name: "QA Alpha",
+      description: "QA-Intel visible workspace.",
+      createdAt: "2026-07-01T08:00:00.000Z",
+    });
+    await workspaceRepository.create({
+      id: "workspace_qa_beta",
+      name: "QA Beta",
+      description: "QA-Intel isolation workspace.",
+      createdAt: "2026-07-01T08:05:00.000Z",
+    });
+    await seedTrace(traceRepository, {
+      id: "exec_qa_history_visible",
+      workspaceId: "workspace_qa_alpha",
+      startedAt: "2026-07-01T12:00:00.000Z",
+      completedAt: "2026-07-01T12:01:00.000Z",
+    });
+    await seedTrace(traceRepository, {
+      id: "exec_qa_history_hidden",
+      workspaceId: "workspace_qa_beta",
+      startedAt: "2026-07-01T13:00:00.000Z",
+      completedAt: "2026-07-01T13:01:00.000Z",
+    });
+    await memoryService.createExecutionEpisode({
+      id: "memory_qa_episode",
+      scope: "workspace",
+      workspaceId: "workspace_qa_alpha",
+      capabilityId: "capability.echo",
+      executionId: "exec_qa_history_visible",
+      eventType: "qa.execution_linked",
+      summary: "QA-Intel execution-linked episode.",
+      outcome: "completed",
+      confidence: 1,
+      sensitivity: "low",
+      sourceType: "execution",
+      sourceRef: "exec_qa_history_visible",
+      sourceCapabilityId: "capability.echo",
+      evidenceRefs: [{ executionId: "exec_qa_history_visible" }],
+    });
+  } finally {
+    connection.close();
+  }
+}
+
+async function seedTrace(
+  traceRepository: SqliteExecutionTraceRepository,
+  input: {
+    id: string;
+    workspaceId: string;
+    startedAt: string;
+    completedAt: string;
+  },
+): Promise<void> {
+  await traceRepository.create({
+    id: input.id,
+    capabilityId: "capability.echo",
+    workspaceId: input.workspaceId,
+    startedAt: input.startedAt,
+  });
+  await traceRepository.appendStep({
+    id: `${input.id}_validate`,
+    executionId: input.id,
+    sequence: 0,
+    kind: "validation",
+    name: "validate input",
+    status: "completed",
+    summary: "Seeded QA-Intel trace input validation.",
+    startedAt: input.startedAt,
+    completedAt: input.startedAt,
+  });
+  await traceRepository.appendStep({
+    id: `${input.id}_finalize`,
+    executionId: input.id,
+    sequence: 1,
+    kind: "workflow",
+    name: "finalize execution",
+    status: "completed",
+    summary: "Seeded QA-Intel trace finalization.",
+    startedAt: input.completedAt,
+    completedAt: input.completedAt,
+  });
+  await traceRepository.markCompleted({
+    executionId: input.id,
+    completedAt: input.completedAt,
+  });
 }
 
 async function waitForServer(server: ChildProcessWithoutNullStreams): Promise<void> {
@@ -199,7 +340,7 @@ async function stopWebServer(server: ChildProcessWithoutNullStreams): Promise<vo
 
 async function writeResult(result: QaResult): Promise<void> {
   await writeFile(
-    join(resultDirectory, `${scenarioName}.json`),
+    join(resultDirectory, `${suiteName}.json`),
     `${JSON.stringify(result, null, 2)}\n`,
   );
 }

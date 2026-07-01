@@ -18,6 +18,7 @@ export type {
   CreateExecutionTraceInput,
   ExecutionTraceRepository,
   FailExecutionTraceInput,
+  ListExecutionTracesPageInput,
   ListRecentExecutionTracesInput,
 } from "./interfaces/execution-trace-repository.js";
 export type {

@@ -80,7 +80,11 @@ export function SemanticMemoryList({
         return (
           <li className="entity-item" key={record.id}>
             <div className="entity-item-body">
-              <Link to="/memory/$memoryId" params={{ memoryId: record.id }}>
+              <Link
+                aria-label={`Open memory ${record.id}`}
+                to="/memory/$memoryId"
+                params={{ memoryId: record.id }}
+              >
                 <span className="entity-item-header">
                   <span>
                     {record.subject} / {record.predicate}
@@ -147,7 +151,11 @@ export function EpisodicMemoryList({
 
         return (
           <li className="entity-item" key={record.id}>
-            <Link to="/memory/$memoryId" params={{ memoryId: record.id }}>
+            <Link
+              aria-label={`Open memory ${record.id}`}
+              to="/memory/$memoryId"
+              params={{ memoryId: record.id }}
+            >
               <span className="entity-item-header">
                 <span>{record.eventType}</span>
                 <span className="pill-row">
@@ -269,7 +277,12 @@ export function ExecutionDataRow({ executionId }: { executionId?: string | undef
 
   return (
     <DataRow label="Execution">
-      <Link className="text-link" to="/executions/$executionId" params={{ executionId }}>
+      <Link
+        className="text-link"
+        to="/executions/$executionId"
+        params={{ executionId }}
+        search={{ page: 1, pageSize: 10 }}
+      >
         {executionId}
       </Link>
     </DataRow>

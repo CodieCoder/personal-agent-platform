@@ -15,6 +15,9 @@ function ExecutionDetailRoute() {
   return (
     <>
       <div className="detail-actions">
+        <Link className="text-link" search={{ page: 1, pageSize: 10 }} to="/executions">
+          Back to history
+        </Link>
         <Link className="text-link" to="/">
           Back to echo
         </Link>

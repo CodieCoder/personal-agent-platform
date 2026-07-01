@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@qutecoder/qa-intel": "0.1.0"
   }
 }

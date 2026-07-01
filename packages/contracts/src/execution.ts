@@ -58,8 +58,56 @@ export const executionTraceSchema = z
   })
   .strict();
 
+export const executionTraceSummarySchema = z
+  .object({
+    id: executionIdSchema,
+    capabilityId: capabilityIdSchema,
+    status: executionStatusSchema,
+    workspaceId: workspaceIdSchema.optional(),
+    startedAt: isoDateTimeSchema,
+    completedAt: isoDateTimeSchema.optional(),
+    stepCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const executionTraceListQuerySchema = z
+  .object({
+    workspaceId: workspaceIdSchema.optional(),
+    capabilityId: capabilityIdSchema.optional(),
+    status: executionStatusSchema.optional(),
+    startedFrom: isoDateTimeSchema.optional(),
+    startedTo: isoDateTimeSchema.optional(),
+    page: z.number().int().min(1).default(1),
+    pageSize: z.number().int().min(1).max(50).default(20),
+  })
+  .strict()
+  .refine(
+    (query) =>
+      query.startedFrom === undefined ||
+      query.startedTo === undefined ||
+      query.startedFrom <= query.startedTo,
+    {
+      message: "Execution trace start range cannot be inverted.",
+      path: ["startedTo"],
+    },
+  );
+
+export const executionTraceListPageSchema = z
+  .object({
+    executions: z.array(executionTraceSummarySchema),
+    page: z.number().int().min(1),
+    pageSize: z.number().int().min(1).max(50),
+    total: z.number().int().nonnegative(),
+    hasNextPage: z.boolean(),
+    hasPreviousPage: z.boolean(),
+  })
+  .strict();
+
 export type ExecutionStatus = z.infer<typeof executionStatusSchema>;
 export type TraceStepStatus = z.infer<typeof traceStepStatusSchema>;
 export type TraceStepKind = z.infer<typeof traceStepKindSchema>;
 export type ExecutionTraceStep = z.infer<typeof executionTraceStepSchema>;
 export type ExecutionTrace = z.infer<typeof executionTraceSchema>;
+export type ExecutionTraceSummary = z.infer<typeof executionTraceSummarySchema>;
+export type ExecutionTraceListQuery = z.infer<typeof executionTraceListQuerySchema>;
+export type ExecutionTraceListPage = z.infer<typeof executionTraceListPageSchema>;

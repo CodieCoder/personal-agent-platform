@@ -606,6 +606,136 @@ test("SqliteExecutionTraceRepository lists recent traces by start time with filt
   }
 });
 
+test("SqliteExecutionTraceRepository pages filtered trace summaries", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-history-");
+  const { repository, close } = createMigratedRepository(temporaryDatabase.databaseUrl);
+
+  try {
+    await repository.create({
+      id: "exec_alpha_old",
+      capabilityId: "capability.echo",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-06-29T09:00:00.000Z",
+    });
+    await repository.create({
+      id: "exec_alpha_recent_a",
+      capabilityId: "capability.echo",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-06-29T12:00:00.000Z",
+    });
+    await repository.create({
+      id: "exec_alpha_recent_b",
+      capabilityId: "capability.echo",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-06-29T12:00:00.000Z",
+    });
+    await repository.create({
+      id: "exec_alpha_failed",
+      capabilityId: "capability.echo",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-06-29T11:00:00.000Z",
+    });
+    await repository.create({
+      id: "exec_beta_recent",
+      capabilityId: "capability.echo",
+      workspaceId: "workspace_beta",
+      startedAt: "2026-06-29T13:00:00.000Z",
+    });
+    await repository.create({
+      id: "exec_alpha_other_capability",
+      capabilityId: "capability.other",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-06-29T12:30:00.000Z",
+    });
+    await repository.appendStep({
+      id: "step_alpha_recent_b_1",
+      executionId: "exec_alpha_recent_b",
+      sequence: 0,
+      kind: "workflow",
+      name: "first step",
+      status: "completed",
+      startedAt: "2026-06-29T12:00:00.100Z",
+      completedAt: "2026-06-29T12:00:00.200Z",
+    });
+    await repository.appendStep({
+      id: "step_alpha_recent_b_2",
+      executionId: "exec_alpha_recent_b",
+      sequence: 1,
+      kind: "workflow",
+      name: "second step",
+      status: "completed",
+      startedAt: "2026-06-29T12:00:00.300Z",
+      completedAt: "2026-06-29T12:00:00.400Z",
+    });
+
+    await repository.markCompleted({
+      executionId: "exec_alpha_old",
+      completedAt: "2026-06-29T09:01:00.000Z",
+    });
+    await repository.markCompleted({
+      executionId: "exec_alpha_recent_a",
+      completedAt: "2026-06-29T12:01:00.000Z",
+    });
+    await repository.markCompleted({
+      executionId: "exec_alpha_recent_b",
+      completedAt: "2026-06-29T12:01:00.000Z",
+    });
+    await repository.markFailed({
+      executionId: "exec_alpha_failed",
+      completedAt: "2026-06-29T11:01:00.000Z",
+      error: {
+        code: "TEST_FAILURE",
+        message: "The filtered trace failed.",
+        category: "storage",
+        retryable: false,
+      },
+    });
+    await repository.markCompleted({
+      executionId: "exec_beta_recent",
+      completedAt: "2026-06-29T13:01:00.000Z",
+    });
+    await repository.markCompleted({
+      executionId: "exec_alpha_other_capability",
+      completedAt: "2026-06-29T12:31:00.000Z",
+    });
+
+    const dateFiltered = await repository.listPage({
+      workspaceId: "workspace_alpha",
+      capabilityId: "capability.echo",
+      status: "completed",
+      startedFrom: "2026-06-29T10:00:00.000Z",
+      startedTo: "2026-06-29T12:59:59.999Z",
+      page: 1,
+      pageSize: 2,
+    });
+    const paged = await repository.listPage({
+      workspaceId: "workspace_alpha",
+      capabilityId: "capability.echo",
+      status: "completed",
+      page: 2,
+      pageSize: 1,
+    });
+
+    assert.deepEqual(
+      dateFiltered.executions.map((execution) => execution.id),
+      ["exec_alpha_recent_b", "exec_alpha_recent_a"],
+    );
+    assert.equal(dateFiltered.total, 2);
+    assert.equal(dateFiltered.hasNextPage, false);
+    assert.equal(dateFiltered.executions[0].stepCount, 2);
+    assert.equal(dateFiltered.executions[0].workspaceId, "workspace_alpha");
+    assert.deepEqual(
+      paged.executions.map((execution) => execution.id),
+      ["exec_alpha_recent_a"],
+    );
+    assert.equal(paged.total, 3);
+    assert.equal(paged.hasPreviousPage, true);
+    assert.equal(paged.hasNextPage, true);
+  } finally {
+    close();
+  }
+});
+
 test("createRuntime executes echo and persists a SQLite trace", async () => {
   const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-runtime-echo-");
   const { repository, close } = createMigratedRepository(temporaryDatabase.databaseUrl);

@@ -510,6 +510,42 @@ class InMemoryTraceRepository {
     return this.traces.map((trace) => this.cloneTrace(trace));
   }
 
+  async listPage(input = {}) {
+    const page = input.page ?? 1;
+    const pageSize = input.pageSize ?? 20;
+    const filtered = this.traces.filter(
+      (trace) =>
+        (!input.workspaceId || trace.workspaceId === input.workspaceId) &&
+        (!input.capabilityId || trace.capabilityId === input.capabilityId) &&
+        (!input.status || trace.status === input.status) &&
+        (!input.startedFrom || trace.startedAt >= input.startedFrom) &&
+        (!input.startedTo || trace.startedAt <= input.startedTo),
+    );
+    const sorted = filtered.sort(
+      (left, right) =>
+        right.startedAt.localeCompare(left.startedAt) || right.id.localeCompare(left.id),
+    );
+    const offset = (page - 1) * pageSize;
+    const executions = sorted.slice(offset, offset + pageSize).map((trace) => ({
+      id: trace.id,
+      capabilityId: trace.capabilityId,
+      status: trace.status,
+      ...(trace.workspaceId ? { workspaceId: trace.workspaceId } : {}),
+      startedAt: trace.startedAt,
+      ...(trace.completedAt ? { completedAt: trace.completedAt } : {}),
+      stepCount: this.steps.filter((step) => step.executionId === trace.id).length,
+    }));
+
+    return {
+      executions,
+      page,
+      pageSize,
+      total: filtered.length,
+      hasNextPage: offset + executions.length < filtered.length,
+      hasPreviousPage: page > 1,
+    };
+  }
+
   requireTrace(executionId) {
     const trace = this.traces.find((candidate) => candidate.id === executionId);
 

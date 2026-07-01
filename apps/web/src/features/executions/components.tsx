@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type {
   ExecutionStatus,
+  ExecutionTraceSummary,
   ExecutionTrace,
   ExecutionTraceStep,
   TraceStepStatus,
@@ -59,6 +60,7 @@ export function RecentExecutions({ executions }: { executions: RecentExecutionSu
             aria-label={index === 0 ? "Latest execution detail" : undefined}
             to="/executions/$executionId"
             params={{ executionId: execution.id }}
+            search={{ page: 1, pageSize: 10 }}
           >
             <span className="recent-item-header">
               <span className="code-value">{execution.id}</span>
@@ -67,7 +69,43 @@ export function RecentExecutions({ executions }: { executions: RecentExecutionSu
             <span className="trace-meta">
               {execution.capabilityId} - {formatTimestamp(execution.startedAt)} -{" "}
               {execution.stepCount} steps
+              {execution.workspaceId ? ` - workspace ${execution.workspaceId}` : ""}
             </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function ExecutionHistoryList({ executions }: { executions: ExecutionTraceSummary[] }) {
+  if (executions.length === 0) {
+    return <p className="empty-state">No executions match these filters.</p>;
+  }
+
+  return (
+    <ul className="entity-list">
+      {executions.map((execution) => (
+        <li className="entity-item" key={execution.id}>
+          <Link
+            aria-label={`Open execution ${execution.id}`}
+            to="/executions/$executionId"
+            params={{ executionId: execution.id }}
+            search={{ page: 1, pageSize: 10 }}
+          >
+            <span className="entity-item-header">
+              <span className="code-value">{execution.id}</span>
+              <StatusPill status={execution.status} />
+            </span>
+            <span className="trace-meta">
+              {execution.capabilityId} - {formatTimestamp(execution.startedAt)} -{" "}
+              {execution.stepCount} steps
+            </span>
+            {execution.workspaceId ? (
+              <span className="trace-meta">
+                workspace <span className="code-value">{execution.workspaceId}</span>
+              </span>
+            ) : null}
           </Link>
         </li>
       ))}
@@ -89,6 +127,11 @@ export function ExecutionSummary({ trace }: { trace: ExecutionTrace }) {
         <DataRow label="Capability">
           <span className="code-value">{trace.capabilityId}</span>
         </DataRow>
+        {trace.workspaceId ? (
+          <DataRow label="Workspace">
+            <span className="code-value">{trace.workspaceId}</span>
+          </DataRow>
+        ) : null}
         <DataRow label="Started">
           <span>{formatTimestamp(trace.startedAt)}</span>
         </DataRow>

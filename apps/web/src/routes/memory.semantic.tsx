@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import type { MemoryScope, MemorySensitivity, MemoryStatus } from "@pap/contracts";
 import { SafeError } from "../features/executions/components";
@@ -86,6 +86,11 @@ function SemanticMemoryRoute() {
   const [mutationResult, setMutationResult] = useState<SemanticMemoryMutationResult | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | undefined>();
   const [isCreating, setIsCreating] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   async function submitCreateSemantic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -223,7 +228,11 @@ function SemanticMemoryRoute() {
             <h2 id="create-semantic-title">Manual create</h2>
             <span>semantic</span>
           </div>
-          <form className="stack-form" onSubmit={submitCreateSemantic}>
+          <form
+            className="stack-form"
+            data-memory-ready={isHydrated ? "true" : "false"}
+            onSubmit={submitCreateSemantic}
+          >
             <div className="field-grid">
               <label htmlFor="semantic-create-scope">Scope</label>
               <select
@@ -331,7 +340,12 @@ function SemanticMemoryRoute() {
                 placeholder="2026-12-31T00:00:00.000Z"
               />
             </div>
-            <button className="primary-button" disabled={isCreating} type="submit">
+            <button
+              aria-busy={isCreating}
+              className="primary-button"
+              disabled={isCreating || !isHydrated}
+              type="submit"
+            >
               {isCreating ? "Creating" : "Create semantic memory"}
             </button>
           </form>

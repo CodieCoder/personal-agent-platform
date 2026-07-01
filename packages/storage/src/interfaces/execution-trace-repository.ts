@@ -1,6 +1,8 @@
 import type {
   CapabilityId,
   ExecutionId,
+  ExecutionTraceListPage,
+  ExecutionTraceListQuery,
   ExecutionTraceStepId,
   ExecutionStatus,
   ExecutionTrace,
@@ -57,6 +59,8 @@ export type ListRecentExecutionTracesInput = {
   capabilityId?: CapabilityId;
 };
 
+export type ListExecutionTracesPageInput = ExecutionTraceListQuery;
+
 export interface ExecutionTraceRepository {
   create(input: CreateExecutionTraceInput): Promise<ExecutionTrace>;
   appendStep(input: AppendExecutionTraceStepInput): Promise<ExecutionTraceStep>;
@@ -65,4 +69,5 @@ export interface ExecutionTraceRepository {
   markCancelled(input: CancelExecutionTraceInput): Promise<ExecutionTrace>;
   getById(executionId: ExecutionId): Promise<ExecutionTrace | null>;
   listRecent(input?: ListRecentExecutionTracesInput): Promise<ExecutionTrace[]>;
+  listPage(input?: Partial<ListExecutionTracesPageInput>): Promise<ExecutionTraceListPage>;
 }

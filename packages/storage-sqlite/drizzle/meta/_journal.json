@@ -15,6 +15,13 @@
       "when": 1782827561690,
       "tag": "0001_clever_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782887744497,
+      "tag": "0002_conscious_namora",
+      "breakpoints": true
     }
   ]
 }

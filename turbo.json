@@ -10,7 +10,7 @@
     "pnpm-workspace.yaml",
     "tsconfig.base.json"
   ],
-  "globalPassThroughEnv": ["PLAYWRIGHT_BASE_URL"],
+  "globalPassThroughEnv": ["PLAYWRIGHT_BASE_URL", "PAP_E2E_DATABASE_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

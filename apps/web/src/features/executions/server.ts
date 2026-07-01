@@ -1,7 +1,17 @@
-import { executionIdSchema, executionTraceSchema, platformErrorSchema, z } from "@pap/contracts";
+import {
+  capabilityIdSchema,
+  executionIdSchema,
+  executionStatusSchema,
+  executionTraceListQuerySchema,
+  executionTraceSchema,
+  platformErrorSchema,
+  workspaceIdSchema,
+  z,
+} from "@pap/contracts";
 import { createServerFn } from "@tanstack/react-start";
 import type {
   EchoExecutionResult,
+  ExecutionHistoryResult,
   ExecutionTraceResult,
   RecentExecutionsResult,
   RecentExecutionSummary,
@@ -12,8 +22,27 @@ import type {
 const echoFormInputSchema = z
   .object({
     message: z.string().trim().min(1, "Echo message cannot be empty."),
+    workspaceId: workspaceIdSchema.optional(),
   })
   .strict();
+
+const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+
+const executionHistoryInputSchema = z
+  .object({
+    workspaceId: workspaceIdSchema.optional(),
+    capabilityId: capabilityIdSchema.optional(),
+    status: executionStatusSchema.optional(),
+    from: dateOnlySchema.optional(),
+    to: dateOnlySchema.optional(),
+    page: z.number().int().min(1).default(1),
+    pageSize: z.number().int().min(1).max(50).default(20),
+  })
+  .strict()
+  .refine((query) => query.from === undefined || query.to === undefined || query.from <= query.to, {
+    message: "Execution history date range cannot be inverted.",
+    path: ["to"],
+  });
 
 const executionTraceInputSchema = z
   .object({
@@ -68,6 +97,7 @@ export const listRecentExecutions = createServerFn({ method: "GET" }).handler(
             id: trace.id,
             capabilityId: trace.capabilityId,
             status: trace.status,
+            ...(trace.workspaceId ? { workspaceId: trace.workspaceId } : {}),
             startedAt: trace.startedAt,
             ...(trace.completedAt ? { completedAt: trace.completedAt } : {}),
             stepCount: trace.steps.length,
@@ -85,6 +115,60 @@ export const listRecentExecutions = createServerFn({ method: "GET" }).handler(
     }
   },
 );
+
+export const listExecutionHistory = createServerFn({ method: "GET" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }): Promise<ExecutionHistoryResult> => {
+    const parsedInput = executionHistoryInputSchema.safeParse(data ?? {});
+
+    if (!parsedInput.success) {
+      return {
+        ok: false,
+        error: {
+          code: "EXECUTION_HISTORY_QUERY_INVALID",
+          message: "Execution history filters are not valid.",
+        },
+      };
+    }
+
+    const parsedQuery = executionTraceListQuerySchema.safeParse({
+      workspaceId: parsedInput.data.workspaceId,
+      capabilityId: parsedInput.data.capabilityId,
+      status: parsedInput.data.status,
+      startedFrom: parsedInput.data.from ? `${parsedInput.data.from}T00:00:00.000Z` : undefined,
+      startedTo: parsedInput.data.to ? `${parsedInput.data.to}T23:59:59.999Z` : undefined,
+      page: parsedInput.data.page,
+      pageSize: parsedInput.data.pageSize,
+    });
+
+    if (!parsedQuery.success) {
+      return {
+        ok: false,
+        error: {
+          code: "EXECUTION_HISTORY_QUERY_INVALID",
+          message: "Execution history filters are not valid.",
+        },
+      };
+    }
+
+    try {
+      const { getWebRuntimeState } = await import("./runtime.server");
+      const state = getWebRuntimeState();
+
+      return {
+        ok: true,
+        page: await state.traceRepository.listPage(parsedQuery.data),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: toSafeWebError(error, {
+          code: "EXECUTION_HISTORY_UNAVAILABLE",
+          message: "Execution history could not be loaded.",
+        }),
+      };
+    }
+  });
 
 export const executeEcho = createServerFn({ method: "POST" })
   .validator((input: unknown) => input)
@@ -109,6 +193,7 @@ export const executeEcho = createServerFn({ method: "POST" })
         input: {
           message: parsedInput.data.message,
         },
+        ...(parsedInput.data.workspaceId ? { workspaceId: parsedInput.data.workspaceId } : {}),
         source: "web",
         requestedUi: false,
         context: {
@@ -234,10 +319,20 @@ function coerceEchoInput(input: unknown): unknown {
   if (typeof FormData !== "undefined" && input instanceof FormData) {
     return {
       message: String(input.get("message") ?? ""),
+      workspaceId: normalizeOptionalFormValue(input.get("workspaceId")),
     };
   }
 
   return input;
+}
+
+function normalizeOptionalFormValue(value: FormDataEntryValue | null): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function parseRuntimePlatformError(error: unknown): SafeWebError | null {

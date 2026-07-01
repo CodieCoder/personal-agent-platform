@@ -15,6 +15,8 @@ import {
   createWorkspaceRequestSchema,
   episodicMemoryQuerySchema,
   episodicMemoryRecordSchema,
+  executionTraceListPageSchema,
+  executionTraceListQuerySchema,
   executionStatusSchema,
   listWorkspacesRequestSchema,
   semanticMemoryQuerySchema,
@@ -31,6 +33,45 @@ test("executionStatusSchema accepts the initial execution statuses", () => {
   assert.equal(executionStatusSchema.parse("running"), "running");
   assert.equal(executionStatusSchema.parse("completed"), "completed");
   assert.equal(executionStatusSchema.safeParse("awaiting_approval").success, false);
+});
+
+test("execution trace list contracts validate filters and page summaries", () => {
+  const query = executionTraceListQuerySchema.parse({
+    workspaceId: "workspace_contracts",
+    capabilityId: "capability.echo",
+    status: "completed",
+    startedFrom: "2026-07-01T00:00:00.000Z",
+    startedTo: "2026-07-01T23:59:59.999Z",
+  });
+  const page = executionTraceListPageSchema.parse({
+    executions: [
+      {
+        id: "exec_contracts",
+        capabilityId: "capability.echo",
+        status: "completed",
+        workspaceId: "workspace_contracts",
+        startedAt: "2026-07-01T12:00:00.000Z",
+        completedAt: "2026-07-01T12:01:00.000Z",
+        stepCount: 3,
+      },
+    ],
+    page: query.page,
+    pageSize: query.pageSize,
+    total: 1,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  });
+
+  assert.equal(query.page, 1);
+  assert.equal(query.pageSize, 20);
+  assert.equal(page.executions[0].stepCount, 3);
+  assert.equal(
+    executionTraceListQuerySchema.safeParse({
+      startedFrom: "2026-07-02T00:00:00.000Z",
+      startedTo: "2026-07-01T00:00:00.000Z",
+    }).success,
+    false,
+  );
 });
 
 test("platformErrorSchema validates typed platform errors", () => {
