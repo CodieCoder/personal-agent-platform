@@ -5,6 +5,7 @@ import type {
   CapabilityId,
   CapabilityManifest,
 } from "@pap/contracts";
+import type { MemoryService } from "@pap/memory";
 import type { PapLogger } from "@pap/shared";
 import type { ExecutionTraceRepository } from "@pap/storage";
 import { CapabilityRegistry } from "./capability-registry.js";
@@ -13,6 +14,7 @@ import type { RuntimeClock } from "./trace-writer.js";
 
 export type CreateRuntimeInput = {
   traceRepository: ExecutionTraceRepository;
+  memoryService?: MemoryService;
   capabilities: CapabilityDefinition[];
   logger?: PapLogger;
   clock?: RuntimeClock;
@@ -36,6 +38,7 @@ export function createRuntime(input: CreateRuntimeInput): Runtime {
   const executionService = new RuntimeExecutionService({
     registry,
     traceRepository: input.traceRepository,
+    ...(input.memoryService ? { memoryService: input.memoryService } : {}),
     ...(input.logger ? { logger: input.logger } : {}),
     ...(input.clock ? { clock: input.clock } : {}),
   });

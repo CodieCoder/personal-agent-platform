@@ -20,7 +20,7 @@
     "typecheck": "pnpm --filter @pap/storage build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint .",
     "test": "pnpm run test:integration",
-    "test:integration": "pnpm --filter @pap/testing build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm run build && vitest run \"test/**/*.test.mjs\"",
+    "test:integration": "pnpm --filter @pap/testing build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm run build && vitest run test",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "pnpm run build && node dist/migrations.js"
   },

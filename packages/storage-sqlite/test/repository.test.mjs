@@ -8,7 +8,10 @@ import { createTemporarySqliteDatabase } from "@pap/testing";
 import {
   createSqliteDatabase,
   runMigrations,
+  SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteSemanticMemoryRepository,
+  SqliteWorkspaceRepository,
 } from "../dist/index.js";
 
 test("runMigrations can apply execution trace migrations twice", async () => {
@@ -29,6 +32,406 @@ test("runMigrations can apply execution trace migrations twice", async () => {
 
     assert.equal(trace.id, executionId);
     assert.equal(trace.status, "running");
+  } finally {
+    close();
+  }
+});
+
+test("SqliteWorkspaceRepository creates, gets, lists, updates, and archives workspaces", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-workspace-");
+  const { workspaceRepository, close } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    const alpha = await workspaceRepository.create({
+      id: "workspace_alpha",
+      name: "  Alpha  ",
+      description: "Primary workspace.",
+      createdAt: "2026-06-30T09:00:00.000Z",
+    });
+    const beta = await workspaceRepository.create({
+      id: "workspace_beta",
+      name: "Beta",
+      createdAt: "2026-06-30T10:00:00.000Z",
+    });
+    const updated = await workspaceRepository.update({
+      id: alpha.id,
+      name: "Alpha Updated",
+      description: "Updated description.",
+      updatedAt: "2026-06-30T11:00:00.000Z",
+    });
+    const archived = await workspaceRepository.archive({
+      id: beta.id,
+      archivedAt: "2026-06-30T12:00:00.000Z",
+    });
+    const active = await workspaceRepository.list();
+    const all = await workspaceRepository.list({ includeArchived: true });
+
+    assert.equal(alpha.name, "Alpha");
+    assert.equal(beta.description, "");
+    assert.equal(updated.description, "Updated description.");
+    assert.equal(archived.status, "archived");
+    assert.equal(archived.archivedAt, "2026-06-30T12:00:00.000Z");
+    assert.deepEqual(
+      active.map((workspace) => workspace.id),
+      ["workspace_alpha"],
+    );
+    assert.deepEqual(all.map((workspace) => workspace.id).sort(), [
+      "workspace_alpha",
+      "workspace_beta",
+    ]);
+    assert.equal((await workspaceRepository.getById("workspace_alpha"))?.name, "Alpha Updated");
+  } finally {
+    close();
+  }
+});
+
+test("SqliteSemanticMemoryRepository creates, gets, lists, and updates semantic memory", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-semantic-");
+  const { workspaceRepository, semanticMemoryRepository, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    const workspace = await workspaceRepository.create({
+      id: "workspace_semantic",
+      name: "Semantic",
+    });
+    const memory = await semanticMemoryRepository.create({
+      id: "memory_semantic_1",
+      scope: "workspace",
+      workspaceId: workspace.id,
+      subject: "project.paos",
+      predicate: "uses",
+      value: { database: "sqlite", durable: true },
+      confidence: 0.95,
+      sensitivity: "low",
+      sourceType: "manual",
+      evidenceRefs: [{ type: "note", id: "note_1" }],
+      createdAt: "2026-06-30T09:00:00.000Z",
+    });
+    const updated = await semanticMemoryRepository.update({
+      id: memory.id,
+      value: { database: "sqlite", orm: "drizzle" },
+      confidence: 1,
+      updatedAt: "2026-06-30T10:00:00.000Z",
+    });
+    const byWorkspace = await semanticMemoryRepository.list({ workspaceId: workspace.id });
+    const bySubject = await semanticMemoryRepository.list({
+      subject: "project.paos",
+      predicate: "uses",
+    });
+
+    assert.deepEqual(memory.value, { database: "sqlite", durable: true });
+    assert.deepEqual(updated.value, { database: "sqlite", orm: "drizzle" });
+    assert.equal(updated.confidence, 1);
+    assert.deepEqual(
+      byWorkspace.map((record) => record.id),
+      [memory.id],
+    );
+    assert.deepEqual(
+      bySubject.map((record) => record.id),
+      [memory.id],
+    );
+    assert.equal((await semanticMemoryRepository.getById(memory.id))?.createdBy, "user");
+  } finally {
+    close();
+  }
+});
+
+test("SqliteSemanticMemoryRepository validates confidence and scope rules", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-semantic-rules-");
+  const { semanticMemoryRepository, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    await assert.rejects(
+      semanticMemoryRepository.create({
+        scope: "personal",
+        subject: "project.paos",
+        predicate: "confidence",
+        value: true,
+        confidence: 1.1,
+      }),
+      /Too big/u,
+    );
+    await assert.rejects(
+      semanticMemoryRepository.create({
+        scope: "workspace",
+        subject: "project.paos",
+        predicate: "uses",
+        value: "sqlite",
+      }),
+      /Workspace-scoped memory requires a workspace ID/u,
+    );
+  } finally {
+    close();
+  }
+});
+
+test("SqliteSemanticMemoryRepository excludes expired and deleted memory by default", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-semantic-exclusion-");
+  const { semanticMemoryRepository, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    const expired = await semanticMemoryRepository.create({
+      id: "memory_expired",
+      scope: "personal",
+      subject: "project.paos",
+      predicate: "old_fact",
+      value: "expired",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+    });
+    const deleted = await semanticMemoryRepository.create({
+      id: "memory_deleted",
+      scope: "personal",
+      subject: "project.paos",
+      predicate: "deleted_fact",
+      value: "deleted",
+    });
+    const active = await semanticMemoryRepository.create({
+      id: "memory_active",
+      scope: "personal",
+      subject: "project.paos",
+      predicate: "active_fact",
+      value: "active",
+    });
+
+    await semanticMemoryRepository.softDelete({ id: deleted.id });
+
+    const defaultList = await semanticMemoryRepository.list();
+    const deletedList = await semanticMemoryRepository.list({ status: "deleted" });
+    const expiredIncluded = await semanticMemoryRepository.list({ includeExpired: true });
+
+    assert.deepEqual(
+      defaultList.map((record) => record.id),
+      [active.id],
+    );
+    assert.deepEqual(
+      deletedList.map((record) => record.id),
+      [deleted.id],
+    );
+    assert.deepEqual(expiredIncluded.map((record) => record.id).sort(), [active.id, expired.id]);
+  } finally {
+    close();
+  }
+});
+
+test("SqliteSemanticMemoryRepository supersedes semantic memory transactionally", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-semantic-supersede-");
+  const { semanticMemoryRepository, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    const original = await semanticMemoryRepository.create({
+      id: "memory_original",
+      scope: "personal",
+      subject: "project.paos",
+      predicate: "database",
+      value: "sqlite",
+      createdAt: "2026-06-30T09:00:00.000Z",
+    });
+    const result = await semanticMemoryRepository.supersede({
+      id: original.id,
+      supersededAt: "2026-06-30T10:00:00.000Z",
+      replacement: {
+        id: "memory_replacement",
+        scope: "personal",
+        subject: "project.paos",
+        predicate: "database",
+        value: "sqlite with drizzle",
+      },
+    });
+    const defaultList = await semanticMemoryRepository.list();
+
+    assert.equal(result.previous.status, "superseded");
+    assert.equal(result.previous.supersededByMemoryId, result.replacement.id);
+    assert.equal(result.replacement.status, "active");
+    assert.equal(result.replacement.supersedesMemoryId, original.id);
+    assert.deepEqual(
+      defaultList.map((record) => record.id),
+      [result.replacement.id],
+    );
+  } finally {
+    close();
+  }
+});
+
+test("SqliteSemanticMemoryRepository approves and rejects proposed semantic memory", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-semantic-proposals-");
+  const { semanticMemoryRepository, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    const original = await semanticMemoryRepository.create({
+      id: "memory_proposal_original",
+      scope: "personal",
+      subject: "project.paos",
+      predicate: "database",
+      value: "sqlite",
+      createdAt: "2026-06-30T09:00:00.000Z",
+    });
+    const proposal = await semanticMemoryRepository.create({
+      id: "memory_proposal_replacement",
+      scope: "personal",
+      subject: "project.paos",
+      predicate: "database",
+      value: "sqlite with drizzle",
+      status: "proposed",
+      supersedesMemoryId: original.id,
+      createdAt: "2026-06-30T10:00:00.000Z",
+    });
+    const rejected = await semanticMemoryRepository.create({
+      id: "memory_proposal_rejected",
+      scope: "personal",
+      subject: "project.paos",
+      predicate: "temporary",
+      value: true,
+      status: "proposed",
+      createdAt: "2026-06-30T11:00:00.000Z",
+    });
+
+    const approved = await semanticMemoryRepository.approveProposal({
+      id: proposal.id,
+      approvedAt: "2026-06-30T12:00:00.000Z",
+    });
+    const rejectedResult = await semanticMemoryRepository.rejectProposal({
+      id: rejected.id,
+      rejectedAt: "2026-06-30T13:00:00.000Z",
+    });
+    const fetchedOriginal = await semanticMemoryRepository.getById(original.id);
+    const defaultList = await semanticMemoryRepository.list();
+
+    assert.equal(approved.status, "active");
+    assert.equal(fetchedOriginal?.status, "superseded");
+    assert.equal(fetchedOriginal?.supersededByMemoryId, proposal.id);
+    assert.equal(rejectedResult.status, "rejected");
+    assert.deepEqual(
+      defaultList.map((record) => record.id),
+      [proposal.id],
+    );
+  } finally {
+    close();
+  }
+});
+
+test("SqliteEpisodicMemoryRepository creates, gets, lists, updates, and links executions", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-episodic-");
+  const { traceRepository, workspaceRepository, episodicMemoryRepository, close } =
+    createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    const workspace = await workspaceRepository.create({
+      id: "workspace_episode",
+      name: "Episodes",
+    });
+    await traceRepository.create({
+      id: "exec_episode",
+      capabilityId: "capability.echo",
+      workspaceId: workspace.id,
+      startedAt: "2026-06-30T09:00:00.000Z",
+    });
+    const older = await episodicMemoryRepository.create({
+      id: "memory_episode_old",
+      scope: "workspace",
+      workspaceId: workspace.id,
+      executionId: "exec_episode",
+      capabilityId: "capability.echo",
+      eventType: "capability.completed",
+      summary: "Older episode.",
+      relatedEntities: [{ type: "workspace", id: workspace.id }],
+      evidenceRefs: ["exec_episode"],
+      sourceType: "execution",
+      sourceCapabilityId: "capability.echo",
+      createdAt: "2026-06-30T09:01:00.000Z",
+    });
+    const newer = await episodicMemoryRepository.create({
+      id: "memory_episode_new",
+      scope: "workspace",
+      workspaceId: workspace.id,
+      executionId: "exec_episode",
+      capabilityId: "capability.echo",
+      eventType: "capability.completed",
+      summary: "Newer episode.",
+      sourceType: "execution",
+      sourceCapabilityId: "capability.echo",
+      createdAt: "2026-06-30T09:02:00.000Z",
+    });
+    const updated = await episodicMemoryRepository.update({
+      id: older.id,
+      summary: "Updated older episode.",
+      outcome: "completed",
+    });
+    const executionEpisodes = await episodicMemoryRepository.list({ executionId: "exec_episode" });
+    const fetched = await episodicMemoryRepository.getById(newer.id);
+
+    assert.equal(updated.summary, "Updated older episode.");
+    assert.equal(updated.outcome, "completed");
+    assert.equal(fetched?.executionId, "exec_episode");
+    assert.deepEqual(
+      executionEpisodes.map((episode) => episode.id),
+      [newer.id, older.id],
+    );
+  } finally {
+    close();
+  }
+});
+
+test("memory repositories isolate workspace and capability filters", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-memory-isolation-");
+  const { workspaceRepository, semanticMemoryRepository, episodicMemoryRepository, close } =
+    createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    const alpha = await workspaceRepository.create({ id: "workspace_iso_alpha", name: "Alpha" });
+    const beta = await workspaceRepository.create({ id: "workspace_iso_beta", name: "Beta" });
+
+    await semanticMemoryRepository.create({
+      id: "memory_workspace_alpha",
+      scope: "workspace",
+      workspaceId: alpha.id,
+      subject: "workspace.alpha",
+      predicate: "name",
+      value: "Alpha",
+    });
+    await semanticMemoryRepository.create({
+      id: "memory_workspace_beta",
+      scope: "workspace",
+      workspaceId: beta.id,
+      subject: "workspace.beta",
+      predicate: "name",
+      value: "Beta",
+    });
+    await episodicMemoryRepository.create({
+      id: "memory_capability_echo",
+      scope: "capability",
+      capabilityId: "capability.echo",
+      eventType: "capability.completed",
+      summary: "Echo completed.",
+    });
+    await episodicMemoryRepository.create({
+      id: "memory_capability_other",
+      scope: "capability",
+      capabilityId: "capability.other",
+      eventType: "capability.completed",
+      summary: "Other completed.",
+    });
+
+    const alphaMemory = await semanticMemoryRepository.list({ workspaceId: alpha.id });
+    const echoEpisodes = await episodicMemoryRepository.list({ capabilityId: "capability.echo" });
+
+    assert.deepEqual(
+      alphaMemory.map((record) => record.id),
+      ["memory_workspace_alpha"],
+    );
+    assert.deepEqual(
+      echoEpisodes.map((episode) => episode.id),
+      ["memory_capability_echo"],
+    );
   } finally {
     close();
   }
@@ -338,6 +741,19 @@ function createRepository(databaseUrl) {
 
   return {
     repository,
+    close: connection.close,
+  };
+}
+
+function createMigratedRepositories(databaseUrl) {
+  runMigrations({ databaseUrl });
+  const connection = createSqliteDatabase({ databaseUrl });
+
+  return {
+    traceRepository: new SqliteExecutionTraceRepository(connection.db),
+    workspaceRepository: new SqliteWorkspaceRepository(connection.db),
+    semanticMemoryRepository: new SqliteSemanticMemoryRepository(connection.db),
+    episodicMemoryRepository: new SqliteEpisodicMemoryRepository(connection.db),
     close: connection.close,
   };
 }

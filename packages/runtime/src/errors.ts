@@ -8,6 +8,7 @@ export const runtimeErrorCodes = {
   capabilityOutputInvalid: "CAPABILITY_OUTPUT_INVALID",
   capabilityExecutionFailed: "CAPABILITY_EXECUTION_FAILED",
   runtimeFeatureUnavailable: "RUNTIME_FEATURE_UNAVAILABLE",
+  memoryPermissionDenied: "CAPABILITY_MEMORY_PERMISSION_DENIED",
   traceAlreadyStarted: "TRACE_ALREADY_STARTED",
   traceNotStarted: "TRACE_NOT_STARTED",
   traceAlreadyFinalized: "TRACE_ALREADY_FINALIZED",
@@ -49,13 +50,19 @@ export function createRuntimeSafeError(input: CreateRuntimeSafeErrorInput): Runt
 export function toPlatformError(
   error: unknown,
   fallback: {
-    code: RuntimeErrorCode;
+    code: string;
     message: string;
     category: PlatformErrorCategory;
   },
 ): PlatformError {
   if (error instanceof RuntimeSafeError) {
     return error.platformError;
+  }
+
+  const carriedPlatformError = parsePlatformErrorCarrier(error);
+
+  if (carriedPlatformError) {
+    return carriedPlatformError;
   }
 
   const serialized = serializeError(error);
@@ -70,6 +77,18 @@ export function toPlatformError(
       ...(serialized.code ? { errorCode: serialized.code } : {}),
     },
   });
+}
+
+function parsePlatformErrorCarrier(error: unknown): PlatformError | null {
+  if (typeof error !== "object" || error === null || !("platformError" in error)) {
+    return null;
+  }
+
+  try {
+    return parsePlatformError(error.platformError);
+  } catch {
+    return null;
+  }
 }
 
 export function assertRuntimeSafeError(error: unknown): RuntimeSafeError {

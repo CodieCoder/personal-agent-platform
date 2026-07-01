@@ -15,13 +15,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm --filter @pap/storage build && tsc -b tsconfig.json",
-    "typecheck": "pnpm --filter @pap/storage build && tsc --noEmit -p tsconfig.json",
+    "build": "pnpm --filter @pap/memory build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/memory build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint .",
-    "test": "pnpm run build && vitest run \"test/**/*.test.mjs\""
+    "test": "pnpm run build && vitest run test/runtime.test.mjs"
   },
   "dependencies": {
     "@pap/contracts": "workspace:*",
+    "@pap/memory": "workspace:*",
     "@pap/shared": "workspace:*",
     "@pap/storage": "workspace:*"
   }

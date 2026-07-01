@@ -1,6 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import { echoCapability } from "@pap/capability-echo";
+import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
 import {
   createLogger,
@@ -8,11 +9,19 @@ import {
   type ServerEnvironment,
   validateEnvironment,
 } from "@pap/shared";
-import type { ExecutionTraceRepository } from "@pap/storage";
+import type {
+  EpisodicMemoryRepository,
+  ExecutionTraceRepository,
+  SemanticMemoryRepository,
+  WorkspaceRepository,
+} from "@pap/storage";
 import {
   createSqliteDatabase,
   runMigrations,
+  SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteSemanticMemoryRepository,
+  SqliteWorkspaceRepository,
   type MigrationResult,
   type SqliteDatabaseConnection,
 } from "@pap/storage-sqlite";
@@ -23,6 +32,10 @@ export type WebRuntimeState = {
   migration: MigrationResult;
   connection: SqliteDatabaseConnection;
   traceRepository: ExecutionTraceRepository;
+  workspaceRepository: WorkspaceRepository;
+  semanticMemoryRepository: SemanticMemoryRepository;
+  episodicMemoryRepository: EpisodicMemoryRepository;
+  memoryService: MemoryService;
   runtime: Runtime;
 };
 
@@ -41,9 +54,18 @@ export function getWebRuntimeState(): WebRuntimeState {
   const migration = runMigrations(databaseConfig);
   const connection = createSqliteDatabase(databaseConfig);
   const traceRepository = new SqliteExecutionTraceRepository(connection.db);
+  const workspaceRepository = new SqliteWorkspaceRepository(connection.db);
+  const semanticMemoryRepository = new SqliteSemanticMemoryRepository(connection.db);
+  const episodicMemoryRepository = new SqliteEpisodicMemoryRepository(connection.db);
+  const memoryService = createMemoryService({
+    semanticMemoryRepository,
+    episodicMemoryRepository,
+    executionTraceRepository: traceRepository,
+  });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
   const runtime = createRuntime({
     traceRepository,
+    memoryService,
     capabilities: [echoCapability],
     logger,
   });
@@ -54,6 +76,10 @@ export function getWebRuntimeState(): WebRuntimeState {
     migration,
     connection,
     traceRepository,
+    workspaceRepository,
+    semanticMemoryRepository,
+    episodicMemoryRepository,
+    memoryService,
     runtime,
   };
 

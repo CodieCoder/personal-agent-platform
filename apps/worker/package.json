@@ -19,6 +19,7 @@
   "dependencies": {
     "@pap/capability-echo": "workspace:*",
     "@pap/contracts": "workspace:*",
+    "@pap/memory": "workspace:*",
     "@pap/runtime": "workspace:*",
     "@pap/shared": "workspace:*",
     "@pap/storage": "workspace:*",

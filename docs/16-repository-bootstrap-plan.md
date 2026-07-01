@@ -977,6 +977,6 @@ SQLite data persists across restart.
 
 At that point, begin the next implementation document:
 
-17-phase-0-1-backlog.md
+backlogs/17-phase-0-1-backlog.md
 
 That document should break these milestones into small executable tickets for Codex.

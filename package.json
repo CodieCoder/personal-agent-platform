@@ -24,6 +24,9 @@
     "test:qa": "tsx qa/runner/src/index.ts",
     "db:generate": "pnpm --filter @pap/storage-sqlite db:generate",
     "db:migrate": "pnpm --filter @pap/storage-sqlite db:migrate",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "ci": "pnpm run verify"
   },

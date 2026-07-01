@@ -38,6 +38,16 @@ function RootComponent() {
             <Link activeProps={{ "aria-current": "page" }} to="/">
               Run echo
             </Link>
+            <Link
+              activeProps={{ "aria-current": "page" }}
+              search={{ includeArchived: false }}
+              to="/workspaces"
+            >
+              Workspaces
+            </Link>
+            <Link activeProps={{ "aria-current": "page" }} to="/memory">
+              Memory
+            </Link>
           </nav>
         </header>
         <main id="main-content" className="page-frame">

@@ -9,6 +9,9 @@ export default defineConfig({
     host: process.env.PAP_BIND_HOST ?? "127.0.0.1",
     port: Number.isNaN(configuredPort) ? 3000 : configuredPort,
   },
+  ssr: {
+    external: ["@pap/storage-sqlite"],
+  },
   plugins: [
     tanstackStart(),
     // The React Vite plugin must run after the TanStack Start plugin.

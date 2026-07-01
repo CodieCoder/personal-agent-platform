@@ -9,13 +9,49 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkspacesRouteImport } from './routes/workspaces'
+import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces.$workspaceId'
+import { Route as MemorySemanticRouteImport } from './routes/memory.semantic'
+import { Route as MemoryEpisodesRouteImport } from './routes/memory.episodes'
+import { Route as MemoryMemoryIdRouteImport } from './routes/memory.$memoryId'
 import { Route as ExecutionsExecutionIdRouteImport } from './routes/executions.$executionId'
 
+const WorkspacesRoute = WorkspacesRouteImport.update({
+  id: '/workspaces',
+  path: '/workspaces',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MemoryRoute = MemoryRouteImport.update({
+  id: '/memory',
+  path: '/memory',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
+  id: '/$workspaceId',
+  path: '/$workspaceId',
+  getParentRoute: () => WorkspacesRoute,
+} as any)
+const MemorySemanticRoute = MemorySemanticRouteImport.update({
+  id: '/semantic',
+  path: '/semantic',
+  getParentRoute: () => MemoryRoute,
+} as any)
+const MemoryEpisodesRoute = MemoryEpisodesRouteImport.update({
+  id: '/episodes',
+  path: '/episodes',
+  getParentRoute: () => MemoryRoute,
+} as any)
+const MemoryMemoryIdRoute = MemoryMemoryIdRouteImport.update({
+  id: '/$memoryId',
+  path: '/$memoryId',
+  getParentRoute: () => MemoryRoute,
 } as any)
 const ExecutionsExecutionIdRoute = ExecutionsExecutionIdRouteImport.update({
   id: '/executions/$executionId',
@@ -25,38 +61,125 @@ const ExecutionsExecutionIdRoute = ExecutionsExecutionIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/memory': typeof MemoryRouteWithChildren
+  '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
+  '/memory/$memoryId': typeof MemoryMemoryIdRoute
+  '/memory/episodes': typeof MemoryEpisodesRoute
+  '/memory/semantic': typeof MemorySemanticRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/memory': typeof MemoryRouteWithChildren
+  '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
+  '/memory/$memoryId': typeof MemoryMemoryIdRoute
+  '/memory/episodes': typeof MemoryEpisodesRoute
+  '/memory/semantic': typeof MemorySemanticRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/memory': typeof MemoryRouteWithChildren
+  '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
+  '/memory/$memoryId': typeof MemoryMemoryIdRoute
+  '/memory/episodes': typeof MemoryEpisodesRoute
+  '/memory/semantic': typeof MemorySemanticRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/executions/$executionId'
+  fullPaths:
+    | '/'
+    | '/memory'
+    | '/workspaces'
+    | '/executions/$executionId'
+    | '/memory/$memoryId'
+    | '/memory/episodes'
+    | '/memory/semantic'
+    | '/workspaces/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/executions/$executionId'
-  id: '__root__' | '/' | '/executions/$executionId'
+  to:
+    | '/'
+    | '/memory'
+    | '/workspaces'
+    | '/executions/$executionId'
+    | '/memory/$memoryId'
+    | '/memory/episodes'
+    | '/memory/semantic'
+    | '/workspaces/$workspaceId'
+  id:
+    | '__root__'
+    | '/'
+    | '/memory'
+    | '/workspaces'
+    | '/executions/$executionId'
+    | '/memory/$memoryId'
+    | '/memory/episodes'
+    | '/memory/semantic'
+    | '/workspaces/$workspaceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  MemoryRoute: typeof MemoryRouteWithChildren
+  WorkspacesRoute: typeof WorkspacesRouteWithChildren
   ExecutionsExecutionIdRoute: typeof ExecutionsExecutionIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workspaces': {
+      id: '/workspaces'
+      path: '/workspaces'
+      fullPath: '/workspaces'
+      preLoaderRoute: typeof WorkspacesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/memory': {
+      id: '/memory'
+      path: '/memory'
+      fullPath: '/memory'
+      preLoaderRoute: typeof MemoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/workspaces/$workspaceId': {
+      id: '/workspaces/$workspaceId'
+      path: '/$workspaceId'
+      fullPath: '/workspaces/$workspaceId'
+      preLoaderRoute: typeof WorkspacesWorkspaceIdRouteImport
+      parentRoute: typeof WorkspacesRoute
+    }
+    '/memory/semantic': {
+      id: '/memory/semantic'
+      path: '/semantic'
+      fullPath: '/memory/semantic'
+      preLoaderRoute: typeof MemorySemanticRouteImport
+      parentRoute: typeof MemoryRoute
+    }
+    '/memory/episodes': {
+      id: '/memory/episodes'
+      path: '/episodes'
+      fullPath: '/memory/episodes'
+      preLoaderRoute: typeof MemoryEpisodesRouteImport
+      parentRoute: typeof MemoryRoute
+    }
+    '/memory/$memoryId': {
+      id: '/memory/$memoryId'
+      path: '/$memoryId'
+      fullPath: '/memory/$memoryId'
+      preLoaderRoute: typeof MemoryMemoryIdRouteImport
+      parentRoute: typeof MemoryRoute
     }
     '/executions/$executionId': {
       id: '/executions/$executionId'
@@ -68,8 +191,37 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface MemoryRouteChildren {
+  MemoryMemoryIdRoute: typeof MemoryMemoryIdRoute
+  MemoryEpisodesRoute: typeof MemoryEpisodesRoute
+  MemorySemanticRoute: typeof MemorySemanticRoute
+}
+
+const MemoryRouteChildren: MemoryRouteChildren = {
+  MemoryMemoryIdRoute: MemoryMemoryIdRoute,
+  MemoryEpisodesRoute: MemoryEpisodesRoute,
+  MemorySemanticRoute: MemorySemanticRoute,
+}
+
+const MemoryRouteWithChildren =
+  MemoryRoute._addFileChildren(MemoryRouteChildren)
+
+interface WorkspacesRouteChildren {
+  WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRoute
+}
+
+const WorkspacesRouteChildren: WorkspacesRouteChildren = {
+  WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRoute,
+}
+
+const WorkspacesRouteWithChildren = WorkspacesRoute._addFileChildren(
+  WorkspacesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  MemoryRoute: MemoryRouteWithChildren,
+  WorkspacesRoute: WorkspacesRouteWithChildren,
   ExecutionsExecutionIdRoute: ExecutionsExecutionIdRoute,
 }
 export const routeTree = rootRouteImport

@@ -24,7 +24,9 @@ export async function startWorker(): Promise<void> {
 
 async function waitForShutdown(state: WorkerRuntimeState): Promise<void> {
   await new Promise<void>((resolve) => {
+    const keepAlive = setInterval(() => undefined, 60_000);
     const shutdown = (signal: NodeJS.Signals) => {
+      clearInterval(keepAlive);
       state.logger.info({ signal }, "Worker shutting down.");
       closeWorkerRuntimeState(state);
       resolve();

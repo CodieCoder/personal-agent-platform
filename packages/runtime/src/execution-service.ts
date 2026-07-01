@@ -7,9 +7,11 @@ import {
   type CapabilityExecutionRequest,
   type CapabilityExecutionResult,
   type CapabilityId,
+  type CapabilityPermission,
   type CapabilityTraceStepInput,
   type PlatformError,
 } from "@pap/contracts";
+import type { MemoryService } from "@pap/memory";
 import { createExecutionId, type PapLogger } from "@pap/shared";
 import type { ExecutionTraceRepository } from "@pap/storage";
 import type { CapabilityRegistry } from "./capability-registry.js";
@@ -24,6 +26,7 @@ import { type RuntimeClock, TraceWriter } from "./trace-writer.js";
 export type RuntimeExecutionServiceOptions = {
   registry: CapabilityRegistry;
   traceRepository: ExecutionTraceRepository;
+  memoryService?: MemoryService;
   logger?: PapLogger;
   clock?: RuntimeClock;
 };
@@ -31,12 +34,14 @@ export type RuntimeExecutionServiceOptions = {
 export class RuntimeExecutionService {
   private readonly registry: CapabilityRegistry;
   private readonly traceRepository: ExecutionTraceRepository;
+  private readonly memoryService: MemoryService | undefined;
   private readonly logger: PapLogger | undefined;
   private readonly clock: RuntimeClock | undefined;
 
   constructor(options: RuntimeExecutionServiceOptions) {
     this.registry = options.registry;
     this.traceRepository = options.traceRepository;
+    this.memoryService = options.memoryService;
     this.logger = options.logger;
     this.clock = options.clock;
   }
@@ -219,9 +224,42 @@ export class RuntimeExecutionService {
         execute: async () => unavailableRuntimeFeature("tools"),
       },
       memory: {
-        getMasterProfile: async () => unavailableRuntimeFeature("memory"),
-        search: async () => unavailableRuntimeFeature("memory"),
-        write: async () => unavailableRuntimeFeature("memory"),
+        getMasterProfile: async () =>
+          this.executeMemoryOperation({
+            capability: input.capability,
+            trace: input.trace,
+            permission: "memory.read",
+            name: "memory.getMasterProfile",
+            completedSummary: "Capability read personal semantic memory.",
+            action: (memoryService) => memoryService.getMasterProfile(),
+          }),
+        search: async (searchInput: unknown) =>
+          this.executeMemoryOperation({
+            capability: input.capability,
+            trace: input.trace,
+            permission: "memory.read",
+            name: "memory.search",
+            completedSummary: "Capability searched bounded memory records.",
+            action: (memoryService) => memoryService.search(searchInput),
+          }),
+        write: async (writeInput: unknown) =>
+          this.executeMemoryOperation({
+            capability: input.capability,
+            trace: input.trace,
+            permission: "memory.write",
+            name: "memory.write",
+            completedSummary: "Capability wrote memory through MemoryService.",
+            action: (memoryService) =>
+              memoryService.writeFromCapability(
+                {
+                  executionId: input.executionId,
+                  capabilityId: input.capability.manifest.id,
+                  ...(input.request.workspaceId ? { workspaceId: input.request.workspaceId } : {}),
+                  ...(input.request.threadId ? { threadId: input.request.threadId } : {}),
+                },
+                writeInput,
+              ),
+          }),
       },
       llm: {
         generateStructured: async () => unavailableRuntimeFeature("llm"),
@@ -233,6 +271,86 @@ export class RuntimeExecutionService {
         request: async () => unavailableRuntimeFeature("approvals"),
       },
     });
+  }
+
+  private async executeMemoryOperation<T>(input: {
+    capability: CapabilityDefinition;
+    trace: TraceWriter;
+    permission: Extract<CapabilityPermission, "memory.read" | "memory.write">;
+    name: string;
+    completedSummary: string;
+    action: (memoryService: MemoryService) => Promise<T>;
+  }): Promise<T> {
+    if (!input.capability.manifest.permissions.includes(input.permission)) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.memoryPermissionDenied,
+        message: `Capability ${input.capability.manifest.id} does not have ${input.permission}.`,
+        category: "permission",
+        details: {
+          capabilityId: input.capability.manifest.id,
+          permission: input.permission,
+        },
+      });
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "failed",
+        summary: `Capability lacks ${input.permission}.`,
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    if (!this.memoryService) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.runtimeFeatureUnavailable,
+        message: "Runtime feature is not available in this slice: memory",
+        category: "capability",
+        details: { feature: "memory" },
+      });
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "failed",
+        summary: "Memory service is not configured.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    try {
+      const result = await input.action(this.memoryService);
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "completed",
+        summary: input.completedSummary,
+      });
+
+      return result;
+    } catch (error) {
+      const platformError = toPlatformError(error, {
+        code: runtimeErrorCodes.capabilityExecutionFailed,
+        message: "Runtime memory operation failed.",
+        category: "memory",
+      });
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "failed",
+        summary: "Runtime memory operation failed.",
+        errorCode: platformError.code,
+        errorMessage: platformError.message,
+      });
+
+      throw error;
+    }
   }
 
   private buildResult(input: {

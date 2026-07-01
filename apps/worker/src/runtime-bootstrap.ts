@@ -1,4 +1,5 @@
 import { echoCapability } from "@pap/capability-echo";
+import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
 import {
   createLogger,
@@ -6,11 +7,17 @@ import {
   type ServerEnvironment,
   validateEnvironment,
 } from "@pap/shared";
-import type { ExecutionTraceRepository } from "@pap/storage";
+import type {
+  EpisodicMemoryRepository,
+  ExecutionTraceRepository,
+  SemanticMemoryRepository,
+} from "@pap/storage";
 import {
   createSqliteDatabase,
   runMigrations,
+  SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteSemanticMemoryRepository,
   type MigrationResult,
   type SqliteDatabaseConnection,
 } from "@pap/storage-sqlite";
@@ -21,6 +28,9 @@ export type WorkerRuntimeState = {
   migration: MigrationResult;
   connection: SqliteDatabaseConnection;
   traceRepository: ExecutionTraceRepository;
+  semanticMemoryRepository: SemanticMemoryRepository;
+  episodicMemoryRepository: EpisodicMemoryRepository;
+  memoryService: MemoryService;
   runtime: Runtime;
   logger: PapLogger;
 };
@@ -34,9 +44,17 @@ export function createWorkerRuntimeState(): WorkerRuntimeState {
   const migration = runMigrations(databaseConfig);
   const connection = createSqliteDatabase(databaseConfig);
   const traceRepository = new SqliteExecutionTraceRepository(connection.db);
+  const semanticMemoryRepository = new SqliteSemanticMemoryRepository(connection.db);
+  const episodicMemoryRepository = new SqliteEpisodicMemoryRepository(connection.db);
+  const memoryService = createMemoryService({
+    semanticMemoryRepository,
+    episodicMemoryRepository,
+    executionTraceRepository: traceRepository,
+  });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
   const runtime = createRuntime({
     traceRepository,
+    memoryService,
     capabilities: [echoCapability],
     logger,
   });
@@ -49,6 +67,9 @@ export function createWorkerRuntimeState(): WorkerRuntimeState {
     migration,
     connection,
     traceRepository,
+    semanticMemoryRepository,
+    episodicMemoryRepository,
+    memoryService,
     runtime,
     logger,
   };

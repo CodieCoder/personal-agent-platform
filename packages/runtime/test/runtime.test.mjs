@@ -167,6 +167,151 @@ test("RuntimeExecutionService completes valid capability output", async () => {
   assert.equal(repository.traces[0].status, "completed");
 });
 
+test("RuntimeExecutionService exposes service-backed memory reads with trace steps", async () => {
+  const repository = new InMemoryTraceRepository();
+  const memoryService = new RecordingMemoryService();
+  const runtime = createRuntime({
+    traceRepository: repository,
+    memoryService,
+    capabilities: [
+      createCapability({
+        manifest: {
+          permissions: ["memory.read"],
+        },
+        execute: async (_input, context) => {
+          const profile = await context.memory.getMasterProfile();
+          const search = await context.memory.search({ semantic: { limit: 1 } });
+
+          return {
+            profileCount: profile.length,
+            searchSemanticCount: search.semantic.length,
+          };
+        },
+      }),
+    ],
+    clock: fixedClock,
+  });
+
+  const result = await runtime.execute({
+    capabilityId: "capability.test",
+    input: { message: "hello" },
+    source: "cli",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.data, {
+    profileCount: 1,
+    searchSemanticCount: 1,
+  });
+  assert.deepEqual(
+    repository.steps
+      .filter((step) => step.kind === "memory")
+      .map((step) => `${step.name}:${step.status}`),
+    ["memory.getMasterProfile:completed", "memory.search:completed"],
+  );
+});
+
+test("RuntimeExecutionService routes capability memory writes through MemoryService only", async () => {
+  const repository = new InMemoryTraceRepository();
+  const memoryService = new RecordingMemoryService();
+  const runtime = createRuntime({
+    traceRepository: repository,
+    memoryService,
+    capabilities: [
+      createCapability({
+        manifest: {
+          permissions: ["memory.write"],
+        },
+        execute: async (_input, context) => {
+          assert.equal("traceRepository" in context, false);
+          assert.equal("semanticMemoryRepository" in context, false);
+          assert.equal("repository" in context.memory, false);
+
+          const write = await context.memory.write({
+            type: "episodic",
+            record: {
+              scope: "capability",
+              capabilityId: "capability.test",
+              eventType: "capability.completed",
+              summary: "Runtime memory write test completed.",
+              confidence: 1,
+              sensitivity: "low",
+            },
+          });
+
+          return {
+            writeType: write.type,
+          };
+        },
+      }),
+    ],
+    clock: fixedClock,
+  });
+
+  const result = await runtime.execute({
+    capabilityId: "capability.test",
+    input: { message: "hello" },
+    source: "cli",
+    workspaceId: "workspace_runtime",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.data.writeType, "episodic");
+  assert.equal(memoryService.writes.length, 1);
+  assert.equal(memoryService.writes[0].context.executionId, result.executionId);
+  assert.equal(memoryService.writes[0].context.capabilityId, "capability.test");
+  assert.equal(memoryService.writes[0].context.workspaceId, "workspace_runtime");
+  assert.deepEqual(
+    repository.steps
+      .filter((step) => step.kind === "memory")
+      .map((step) => `${step.name}:${step.status}`),
+    ["memory.write:completed"],
+  );
+});
+
+test("RuntimeExecutionService denies memory writes without manifest permission", async () => {
+  const repository = new InMemoryTraceRepository();
+  const memoryService = new RecordingMemoryService();
+  const runtime = createRuntime({
+    traceRepository: repository,
+    memoryService,
+    capabilities: [
+      createCapability({
+        execute: async (_input, context) => {
+          await context.memory.write({
+            type: "episodic",
+            record: {
+              scope: "capability",
+              capabilityId: "capability.test",
+              eventType: "capability.completed",
+              summary: "This should be denied.",
+              confidence: 1,
+              sensitivity: "low",
+            },
+          });
+        },
+      }),
+    ],
+    clock: fixedClock,
+  });
+
+  const result = await runtime.execute({
+    capabilityId: "capability.test",
+    input: { message: "hello" },
+    source: "cli",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.error.code, "CAPABILITY_MEMORY_PERMISSION_DENIED");
+  assert.equal(memoryService.writes.length, 0);
+  assert.deepEqual(
+    repository.steps
+      .filter((step) => step.kind === "memory")
+      .map((step) => `${step.name}:${step.status}:${step.errorCode}`),
+    ["memory.write:failed:CAPABILITY_MEMORY_PERMISSION_DENIED"],
+  );
+});
+
 test("RuntimeExecutionService fails traces for invalid output", async () => {
   const repository = new InMemoryTraceRepository();
   const registry = new CapabilityRegistry();
@@ -218,33 +363,43 @@ test("RuntimeExecutionService serializes unhandled capability errors safely", as
 });
 
 function createCapability(overrides = {}) {
+  const defaultManifest = {
+    id: "capability.test",
+    version: "0.1.0",
+    name: "Test Capability",
+    description: "A test capability.",
+    skill: {
+      id: "skill.test",
+      version: "0.1.0",
+      path: "./skills/test",
+    },
+    inputSchemaId: "capability.test.input.v1",
+    outputSchemaId: "capability.test.output.v1",
+    allowedTools: [],
+    allowedChildCapabilities: [],
+    supportedUiBlocks: [],
+    permissions: [],
+    sideEffects: ["none"],
+    approvalPolicyId: "approval.none",
+    memoryPolicyId: "memory.none",
+    trustLevel: "core",
+    tags: ["test"],
+  };
+  const manifestOverrides = overrides.manifest ?? {};
+
   return {
     manifest: {
-      id: "capability.test",
-      version: "0.1.0",
-      name: "Test Capability",
-      description: "A test capability.",
+      ...defaultManifest,
+      ...manifestOverrides,
       skill: {
-        id: "skill.test",
-        version: "0.1.0",
-        path: "./skills/test",
+        ...defaultManifest.skill,
+        ...(manifestOverrides.skill ?? {}),
       },
-      inputSchemaId: "capability.test.input.v1",
-      outputSchemaId: "capability.test.output.v1",
-      allowedTools: [],
-      allowedChildCapabilities: [],
-      supportedUiBlocks: [],
-      permissions: [],
-      sideEffects: ["none"],
-      approvalPolicyId: "approval.none",
-      memoryPolicyId: "memory.none",
-      trustLevel: "core",
-      tags: ["test"],
     },
     inputSchema: passingSchema(),
     outputSchema: passingSchema(),
     execute: async (input) => input,
-    ...overrides,
+    ...Object.fromEntries(Object.entries(overrides).filter(([key]) => key !== "manifest")),
   };
 }
 
@@ -374,6 +529,135 @@ class InMemoryTraceRepository {
         .map((step) => ({ ...step })),
     };
   }
+}
+
+class RecordingMemoryService {
+  writes = [];
+
+  async listSemanticMemory() {
+    return [createSemanticMemoryRecord("memory_semantic_list")];
+  }
+
+  async listEpisodicMemory() {
+    return [];
+  }
+
+  async getMemoryRecord() {
+    return null;
+  }
+
+  async createSemanticMemory() {
+    return createSemanticMemoryRecord("memory_created");
+  }
+
+  async writeAutomaticSemanticMemory() {
+    return createSemanticMemoryRecord("memory_automatic");
+  }
+
+  async proposeSemanticMemory() {
+    return createSemanticMemoryRecord("memory_proposed", { status: "proposed" });
+  }
+
+  async updateSemanticMemory() {
+    return createSemanticMemoryRecord("memory_updated");
+  }
+
+  async supersedeSemanticMemory() {
+    return {
+      previous: createSemanticMemoryRecord("memory_previous", { status: "superseded" }),
+      replacement: createSemanticMemoryRecord("memory_replacement"),
+    };
+  }
+
+  async approveSemanticMemoryProposal() {
+    return createSemanticMemoryRecord("memory_approved");
+  }
+
+  async rejectSemanticMemoryProposal() {
+    return createSemanticMemoryRecord("memory_rejected", { status: "rejected" });
+  }
+
+  async createEpisodicMemory() {
+    return createEpisodicMemoryRecord("memory_episode");
+  }
+
+  async createExecutionEpisode() {
+    return createEpisodicMemoryRecord("memory_execution_episode");
+  }
+
+  async expireMemoryRecord() {
+    return {
+      type: "semantic",
+      record: createSemanticMemoryRecord("memory_expired", { status: "expired" }),
+    };
+  }
+
+  async deleteMemoryRecord() {
+    return {
+      type: "semantic",
+      record: createSemanticMemoryRecord("memory_deleted", { status: "deleted" }),
+    };
+  }
+
+  async getMasterProfile() {
+    return [createSemanticMemoryRecord("memory_profile")];
+  }
+
+  async search() {
+    return {
+      semantic: [createSemanticMemoryRecord("memory_search")],
+      episodic: [],
+    };
+  }
+
+  async writeFromCapability(context, input) {
+    this.writes.push({ context, input });
+
+    return {
+      type: "episodic",
+      record: createEpisodicMemoryRecord("memory_runtime_write", {
+        executionId: context.executionId,
+      }),
+    };
+  }
+}
+
+function createSemanticMemoryRecord(id, overrides = {}) {
+  return {
+    id,
+    scope: "personal",
+    subject: "project.paos",
+    predicate: "test",
+    value: true,
+    sourceType: "manual",
+    evidenceRefs: [],
+    createdBy: "test",
+    confidence: 1,
+    sensitivity: "low",
+    status: "active",
+    createdAt: fixedNow,
+    updatedAt: fixedNow,
+    ...overrides,
+  };
+}
+
+function createEpisodicMemoryRecord(id, overrides = {}) {
+  return {
+    id,
+    scope: "capability",
+    capabilityId: "capability.test",
+    eventType: "capability.completed",
+    summary: "Test episode.",
+    relatedEntities: [],
+    sourceType: "execution",
+    evidenceRefs: [],
+    confidence: 1,
+    sensitivity: "low",
+    status: "active",
+    createdAt: fixedNow,
+    updatedAt: fixedNow,
+    ...overrides,
+  };
 }
 
 async function sleep(milliseconds) {

@@ -22,7 +22,9 @@ export default defineConfig({
           environment: "node",
           include: [
             "packages/runtime/test/**/*.test.mjs",
+            "packages/memory/test/**/*.test.mjs",
             "packages/storage-sqlite/test/**/*.test.mjs",
+            "apps/web/test/**/*.test.mjs",
           ],
           testTimeout: 10_000,
         },

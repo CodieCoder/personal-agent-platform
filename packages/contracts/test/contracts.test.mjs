@@ -10,9 +10,19 @@ import {
   capabilityExecutionRequestSchema,
   capabilityExecutionResultSchema,
   capabilityManifestSchema,
+  createEpisodicMemoryRequestSchema,
+  createSemanticMemoryRequestSchema,
+  createWorkspaceRequestSchema,
+  episodicMemoryQuerySchema,
+  episodicMemoryRecordSchema,
   executionStatusSchema,
+  listWorkspacesRequestSchema,
+  semanticMemoryQuerySchema,
+  semanticMemoryRecordSchema,
   parsePlatformError,
   platformErrorSchema,
+  updateWorkspaceRequestSchema,
+  workspaceSchema,
 } from "../dist/index.js";
 
 const fixtureDirectory = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -225,6 +235,129 @@ test("contract JSON fixtures remain valid", async () => {
 
   assert.equal(capabilityManifestSchema.parse(manifest).id, "capability.echo");
   assert.equal(capabilityExecutionResultSchema.parse(result).status, "completed");
+});
+
+test("workspace contracts validate IDs, bounded names, defaults, and list requests", () => {
+  const workspace = workspaceSchema.parse({
+    id: "workspace_123",
+    name: "  Personal OS  ",
+    status: "active",
+    createdAt: "2026-06-30T09:00:00.000Z",
+    updatedAt: "2026-06-30T09:00:00.000Z",
+  });
+
+  assert.equal(workspace.name, "Personal OS");
+  assert.equal(workspace.description, "");
+  assert.equal(createWorkspaceRequestSchema.safeParse({ name: "" }).success, false);
+  assert.equal(workspaceSchema.safeParse({ ...workspace, id: "x" }).success, false);
+  assert.deepEqual(listWorkspacesRequestSchema.parse({}), {
+    includeArchived: false,
+    limit: 50,
+    offset: 0,
+  });
+  assert.equal(updateWorkspaceRequestSchema.safeParse({ id: "workspace_123" }).success, false);
+});
+
+test("semantic memory contracts validate JSON values, confidence, and scope rules", () => {
+  const memory = semanticMemoryRecordSchema.parse({
+    id: "memory_123",
+    scope: "workspace",
+    workspaceId: "workspace_123",
+    subject: "project.paos",
+    predicate: "uses",
+    value: { database: "sqlite", confidence: 1, tags: ["local-first"] },
+    sourceType: "manual",
+    status: "active",
+    confidence: 0.8,
+    sensitivity: "low",
+    createdAt: "2026-06-30T09:00:00.000Z",
+    updatedAt: "2026-06-30T09:00:00.000Z",
+  });
+
+  assert.equal(memory.createdBy, "user");
+  assert.deepEqual(memory.evidenceRefs, []);
+  assert.equal(
+    createSemanticMemoryRequestSchema.safeParse({
+      scope: "workspace",
+      subject: "project.paos",
+      predicate: "uses",
+      value: "sqlite",
+      confidence: 1.1,
+    }).success,
+    false,
+  );
+  assert.equal(
+    createSemanticMemoryRequestSchema.safeParse({
+      scope: "workspace",
+      subject: "project.paos",
+      predicate: "uses",
+      value: "sqlite",
+    }).success,
+    false,
+  );
+  assert.equal(
+    createSemanticMemoryRequestSchema.safeParse({
+      scope: "personal",
+      subject: "bad",
+      predicate: "bad",
+      value: () => undefined,
+    }).success,
+    false,
+  );
+});
+
+test("memory query contracts apply bounded defaults and reject inverted ranges", () => {
+  const semanticQuery = semanticMemoryQuerySchema.parse({});
+  const episodicQuery = episodicMemoryQuerySchema.parse({ limit: 100, offset: 2 });
+
+  assert.equal(semanticQuery.status, "active");
+  assert.equal(semanticQuery.includeExpired, false);
+  assert.equal(semanticQuery.limit, 50);
+  assert.equal(episodicQuery.limit, 100);
+  assert.equal(episodicQuery.offset, 2);
+  assert.equal(semanticMemoryQuerySchema.safeParse({ limit: 101 }).success, false);
+  assert.equal(
+    semanticMemoryQuerySchema.safeParse({ confidenceMin: 0.9, confidenceMax: 0.1 }).success,
+    false,
+  );
+});
+
+test("episodic memory contracts validate execution links and JSON-compatible arrays", () => {
+  const episode = episodicMemoryRecordSchema.parse({
+    id: "memory_episode_123",
+    scope: "capability",
+    capabilityId: "capability.echo",
+    executionId: "exec_123",
+    eventType: "capability.completed",
+    summary: "Echo completed successfully.",
+    relatedEntities: [{ type: "workspace", id: "workspace_123" }],
+    evidenceRefs: ["exec_123"],
+    sourceType: "execution",
+    status: "active",
+    confidence: 1,
+    sensitivity: "low",
+    createdAt: "2026-06-30T09:00:00.000Z",
+    updatedAt: "2026-06-30T09:00:00.000Z",
+  });
+
+  assert.equal(episode.executionId, "exec_123");
+  assert.equal(
+    createEpisodicMemoryRequestSchema.safeParse({
+      scope: "thread",
+      eventType: "capability.completed",
+      summary: "Echo completed successfully.",
+    }).success,
+    false,
+  );
+  assert.equal(
+    createEpisodicMemoryRequestSchema.safeParse({
+      scope: "personal",
+      eventType: "capability.completed",
+      summary: "Echo completed successfully.",
+      relatedEntities: [undefined],
+    }).success,
+    false,
+  );
 });
 
 async function loadFixture(fileName) {
