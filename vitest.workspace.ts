@@ -9,6 +9,8 @@ export default defineConfig({
           environment: "node",
           include: [
             "packages/contracts/test/**/*.test.mjs",
+            "packages/ai/test/**/*.test.mjs",
+            "packages/ai-ollama/test/**/*.test.mjs",
             "packages/shared/test/**/*.test.mjs",
             "packages/storage/test/**/*.test.mjs",
             "packages/testing/test/**/*.test.mjs",

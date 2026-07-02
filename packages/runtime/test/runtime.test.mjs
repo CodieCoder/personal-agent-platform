@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
+import { createAIProviderRegistry } from "@pap/ai";
+import { z } from "@pap/contracts";
 import {
   CapabilityRegistry,
   RuntimeExecutionService,
@@ -312,6 +314,148 @@ test("RuntimeExecutionService denies memory writes without manifest permission",
   );
 });
 
+test("RuntimeExecutionService exposes permission-gated structured generation with trace metadata", async () => {
+  const repository = new InMemoryTraceRepository();
+  const provider = createAIProvider();
+  const runtime = createRuntime({
+    traceRepository: repository,
+    aiProviderRegistry: createAIProviderRegistry([provider]),
+    capabilities: [
+      createCapability({
+        manifest: {
+          permissions: ["llm.generate"],
+        },
+        execute: async (_input, context) => {
+          const result = await context.llm.generateStructured({
+            providerId: provider.id,
+            model: "llama3.2:latest",
+            systemPrompt: null,
+            prompt: "Say hello.",
+            responseSchema: {
+              id: "model.echo.output",
+              schema: z.object({ message: z.string() }),
+            },
+            temperature: null,
+            maxTokens: null,
+            timeoutMs: 60_000,
+            keepAlive: "5m",
+            metadata: null,
+          });
+
+          return {
+            message: result.output.message,
+            providerId: result.providerId,
+            model: result.model,
+            durationMs: result.durationMs,
+          };
+        },
+      }),
+    ],
+    clock: fixedClock,
+  });
+
+  const result = await runtime.execute({
+    capabilityId: "capability.test",
+    input: { message: "hello" },
+    source: "cli",
+  });
+  const llmStep = repository.steps.find((step) => step.kind === "llm");
+
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.data, {
+    message: "hello",
+    providerId: provider.id,
+    model: "llama3.2:latest",
+    durationMs: 250,
+  });
+  assert.equal(provider.requests.length, 1);
+  assert.equal(llmStep.status, "completed");
+  assert.deepEqual(llmStep.metadata, {
+    providerId: provider.id,
+    model: "llama3.2:latest",
+    responseSchemaId: "model.echo.output",
+    timeoutMs: 60_000,
+    keepAlive: "5m",
+    temperature: null,
+    maxTokens: null,
+    durationMs: 250,
+    promptTokenCount: 4,
+    completionTokenCount: 2,
+    totalTokenCount: 6,
+  });
+});
+
+test("RuntimeExecutionService denies structured generation without manifest permission", async () => {
+  const repository = new InMemoryTraceRepository();
+  const provider = createAIProvider();
+  const runtime = createRuntime({
+    traceRepository: repository,
+    aiProviderRegistry: createAIProviderRegistry([provider]),
+    capabilities: [
+      createCapability({
+        execute: async (_input, context) => {
+          await context.llm.generateStructured({
+            providerId: provider.id,
+            model: "llama3.2:latest",
+            systemPrompt: null,
+            prompt: "Say hello.",
+            responseSchema: {
+              id: "model.echo.output",
+              schema: z.object({ message: z.string() }),
+            },
+            temperature: null,
+            maxTokens: null,
+            timeoutMs: 60_000,
+            keepAlive: "5m",
+            metadata: null,
+          });
+        },
+      }),
+    ],
+  });
+
+  const result = await runtime.execute({
+    capabilityId: "capability.test",
+    input: { message: "hello" },
+    source: "cli",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.error.code, "CAPABILITY_LLM_PERMISSION_DENIED");
+  assert.equal(provider.requests.length, 0);
+  assert.deepEqual(
+    repository.steps
+      .filter((step) => step.kind === "llm")
+      .map((step) => `${step.name}:${step.status}:${step.errorCode}`),
+    ["llm.generateStructured:failed:CAPABILITY_LLM_PERMISSION_DENIED"],
+  );
+});
+
+test("Runtime exposes provider health through provider-neutral registry", async () => {
+  const repository = new InMemoryTraceRepository();
+  const provider = createAIProvider();
+  const runtime = createRuntime({
+    traceRepository: repository,
+    aiProviderRegistry: createAIProviderRegistry([provider]),
+    capabilities: [createCapability()],
+  });
+
+  const health = await runtime.getProviderHealth(provider.id);
+  const allHealth = await runtime.listProviderHealth();
+
+  assert.equal(runtime.getAIProvider(provider.id), provider);
+  assert.deepEqual(
+    runtime.listAIProviders().map((candidate) => candidate.id),
+    [provider.id],
+  );
+  assert.equal(health.status, "healthy");
+  assert.deepEqual(allHealth, [health]);
+  await assert.rejects(
+    () => runtime.getProviderHealth("provider.missing"),
+    (error) => error.name === "AIProviderError" && error.code === "provider_not_found",
+  );
+});
+
 test("RuntimeExecutionService fails traces for invalid output", async () => {
   const repository = new InMemoryTraceRepository();
   const registry = new CapabilityRegistry();
@@ -424,6 +568,45 @@ function failingSchema(message) {
   };
 }
 
+function createAIProvider(overrides = {}) {
+  const requests = [];
+  const provider = {
+    id: overrides.id ?? "provider.local_ollama",
+    requests,
+    async health() {
+      return {
+        providerId: provider.id,
+        kind: "ollama",
+        status: "healthy",
+        checkedAt: fixedNow,
+        model: "llama3.2:latest",
+      };
+    },
+    async generateStructured(request) {
+      requests.push(request);
+
+      if (overrides.error) {
+        throw overrides.error;
+      }
+
+      return {
+        providerId: provider.id,
+        model: request.model,
+        output: overrides.output ?? { message: "hello" },
+        rawText: '{"message":"hello"}',
+        startedAt: "2026-07-02T09:00:00.000Z",
+        completedAt: "2026-07-02T09:00:00.250Z",
+        durationMs: 250,
+        promptTokenCount: 4,
+        completionTokenCount: 2,
+        totalTokenCount: 6,
+      };
+    },
+  };
+
+  return provider;
+}
+
 class InMemoryTraceRepository {
   traces = [];
   steps = [];
@@ -465,6 +648,7 @@ class InMemoryTraceRepository {
       ...(input.completedAt ? { completedAt: input.completedAt } : {}),
       ...(input.errorCode ? { errorCode: input.errorCode } : {}),
       ...(input.errorMessage ? { errorMessage: input.errorMessage } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
       createdAt: input.startedAt,
     };
     this.steps.push(step);

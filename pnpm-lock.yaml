@@ -35,6 +35,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@pap/ai-ollama':
+        specifier: workspace:*
+        version: link:../../packages/ai-ollama
       '@pap/capability-echo':
         specifier: workspace:*
         version: link:../../packages/capabilities/echo
@@ -90,6 +93,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@pap/ai-ollama':
+        specifier: workspace:*
+        version: link:../../packages/ai-ollama
       '@pap/capability-echo':
         specifier: workspace:*
         version: link:../../packages/capabilities/echo
@@ -115,6 +121,27 @@ importers:
       tsx:
         specifier: ^4.22.4
         version: 4.22.4
+
+  packages/ai:
+    dependencies:
+      '@pap/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      zod:
+        specifier: ^4.2.0
+        version: 4.4.3
+
+  packages/ai-ollama:
+    dependencies:
+      '@pap/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@pap/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      zod:
+        specifier: ^4.2.0
+        version: 4.4.3
 
   packages/capabilities/echo:
     dependencies:
@@ -149,6 +176,9 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@pap/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@pap/contracts':
         specifier: workspace:*
         version: link:../contracts

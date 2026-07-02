@@ -8,6 +8,7 @@ import {
   workspaceIdSchema,
 } from "./common.js";
 import { platformErrorCodeSchema } from "./errors.js";
+import { jsonValueSchema, type JsonValue } from "./memory.js";
 
 export const executionStatusSchema = z.enum(["running", "completed", "failed", "cancelled"]);
 
@@ -24,6 +25,12 @@ export const traceStepKindSchema = z.enum([
   "workflow",
 ]);
 
+export const traceStepMetadataSchema = z
+  .record(z.string().min(1).max(80), jsonValueSchema)
+  .refine((metadata) => Object.keys(metadata).length <= 25, {
+    message: "Trace step metadata may include at most 25 keys.",
+  });
+
 export const executionTraceStepSchema = z
   .object({
     id: executionTraceStepIdSchema,
@@ -37,6 +44,7 @@ export const executionTraceStepSchema = z
     completedAt: isoDateTimeSchema.optional(),
     errorCode: platformErrorCodeSchema.optional(),
     errorMessage: z.string().min(1).optional(),
+    metadata: traceStepMetadataSchema.optional(),
     createdAt: isoDateTimeSchema,
   })
   .strict();
@@ -106,6 +114,7 @@ export const executionTraceListPageSchema = z
 export type ExecutionStatus = z.infer<typeof executionStatusSchema>;
 export type TraceStepStatus = z.infer<typeof traceStepStatusSchema>;
 export type TraceStepKind = z.infer<typeof traceStepKindSchema>;
+export type TraceStepMetadata = Record<string, JsonValue>;
 export type ExecutionTraceStep = z.infer<typeof executionTraceStepSchema>;
 export type ExecutionTrace = z.infer<typeof executionTraceSchema>;
 export type ExecutionTraceSummary = z.infer<typeof executionTraceSummarySchema>;

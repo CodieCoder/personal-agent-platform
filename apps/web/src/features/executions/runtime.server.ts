@@ -1,5 +1,6 @@
 import "@tanstack/react-start/server-only";
 
+import { createOllamaProviderRegistry } from "@pap/ai-ollama";
 import { echoCapability } from "@pap/capability-echo";
 import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
@@ -63,11 +64,13 @@ export function getWebRuntimeState(): WebRuntimeState {
     executionTraceRepository: traceRepository,
   });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
+  const aiProviderRegistry = createOllamaProviderRegistry({ env: process.env });
   const runtime = createRuntime({
     traceRepository,
     memoryService,
     capabilities: [echoCapability],
     logger,
+    aiProviderRegistry,
   });
 
   runtimeState = {

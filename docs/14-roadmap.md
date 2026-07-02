@@ -206,7 +206,8 @@ Goal: Add local-model intelligence without allowing free-form unvalidated output
 
 Deliverables
 
-@pap/llm-ollama
+@pap/ai
+@pap/ai-ollama
 Provider health check
 Model configuration
 Structured output helper

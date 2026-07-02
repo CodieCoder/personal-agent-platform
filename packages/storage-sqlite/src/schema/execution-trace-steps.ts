@@ -18,6 +18,7 @@ export const executionTraceSteps = sqliteTable(
     completedAt: text("completed_at"),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
+    metadataJson: text("metadata_json"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [

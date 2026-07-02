@@ -1,0 +1,1 @@
+ALTER TABLE `execution_trace_steps` ADD `metadata_json` text;

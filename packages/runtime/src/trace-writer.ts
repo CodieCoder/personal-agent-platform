@@ -89,6 +89,7 @@ export class TraceWriter {
       ...(completedAt ? { completedAt } : {}),
       ...(stepInput.errorCode ? { errorCode: stepInput.errorCode } : {}),
       ...(stepInput.errorMessage ? { errorMessage: stepInput.errorMessage } : {}),
+      ...(stepInput.metadata ? { metadata: stepInput.metadata } : {}),
     });
 
     return step;

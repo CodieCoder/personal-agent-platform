@@ -12,7 +12,12 @@ import {
   workspaceIdSchema,
 } from "./common.js";
 import { platformErrorCodeSchema, platformErrorSchema } from "./errors.js";
-import { executionStatusSchema, traceStepKindSchema, traceStepStatusSchema } from "./execution.js";
+import {
+  executionStatusSchema,
+  traceStepKindSchema,
+  traceStepMetadataSchema,
+  traceStepStatusSchema,
+} from "./execution.js";
 
 export const capabilityPermissionSchema = z.enum([
   "profile.read",
@@ -33,6 +38,7 @@ export const capabilityPermissionSchema = z.enum([
   "finance.write",
   "document.read",
   "document.write",
+  "llm.generate",
   "ui.render",
 ]);
 
@@ -136,6 +142,7 @@ export const capabilityTraceStepInputSchema = z
     completedAt: isoDateTimeSchema.optional(),
     errorCode: platformErrorCodeSchema.optional(),
     errorMessage: z.string().min(1).optional(),
+    metadata: traceStepMetadataSchema.optional(),
   })
   .strict();
 

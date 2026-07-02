@@ -23,6 +23,9 @@ import {
   semanticMemoryRecordSchema,
   parsePlatformError,
   platformErrorSchema,
+  providerHealthSchema,
+  structuredGenerationRequestSchema,
+  structuredGenerationResultSchema,
   updateWorkspaceRequestSchema,
   workspaceSchema,
 } from "../dist/index.js";
@@ -69,6 +72,125 @@ test("execution trace list contracts validate filters and page summaries", () =>
     executionTraceListQuerySchema.safeParse({
       startedFrom: "2026-07-02T00:00:00.000Z",
       startedTo: "2026-07-01T00:00:00.000Z",
+    }).success,
+    false,
+  );
+});
+
+test("AI provider contracts validate structured generation requests and results", () => {
+  const responseSchema = {
+    id: "model.echo.output",
+    description: "Echo output shape.",
+    schema: z.object({ message: z.string() }),
+  };
+
+  const request = structuredGenerationRequestSchema.parse({
+    providerId: "provider.local_ollama",
+    model: "llama3.2:latest",
+    systemPrompt: "Return JSON only.",
+    prompt: "Say hello.",
+    responseSchema,
+    temperature: 0.2,
+    maxTokens: 512,
+    timeoutMs: 60_000,
+    keepAlive: "5m",
+    metadata: { capabilityId: "capability.echo" },
+  });
+
+  const result = structuredGenerationResultSchema.parse({
+    providerId: request.providerId,
+    model: request.model,
+    output: { unexpected: true },
+    rawText: '{"unexpected":true}',
+    startedAt: "2026-07-02T09:00:00.000Z",
+    completedAt: "2026-07-02T09:00:01.000Z",
+    durationMs: 1000,
+    promptTokenCount: null,
+    completionTokenCount: null,
+    totalTokenCount: null,
+  });
+
+  assert.equal(request.providerId, "provider.local_ollama");
+  assert.deepEqual(result.output, { unexpected: true });
+});
+
+test("AI provider result contracts compare offset timestamps chronologically", () => {
+  const result = {
+    providerId: "provider.local_ollama",
+    model: "llama3.2:latest",
+    output: { message: "hello" },
+    rawText: '{"message":"hello"}',
+    durationMs: 1000,
+    promptTokenCount: null,
+    completionTokenCount: null,
+    totalTokenCount: null,
+  };
+
+  assert.equal(
+    structuredGenerationResultSchema.safeParse({
+      ...result,
+      startedAt: "2026-07-02T10:00:00.000+02:00",
+      completedAt: "2026-07-02T08:30:00.000Z",
+    }).success,
+    true,
+  );
+  assert.equal(
+    structuredGenerationResultSchema.safeParse({
+      ...result,
+      startedAt: "2026-07-02T08:30:00.000Z",
+      completedAt: "2026-07-02T10:00:00.000+02:00",
+    }).success,
+    false,
+  );
+});
+
+test("AI provider contracts reject unsupported provider kinds and bounded request fields", () => {
+  const responseSchema = {
+    id: "model.echo.output",
+    schema: z.object({ message: z.string() }),
+  };
+  const validRequest = {
+    providerId: "provider.local_ollama",
+    model: "llama3.2:latest",
+    systemPrompt: null,
+    prompt: "Say hello.",
+    responseSchema,
+    temperature: null,
+    maxTokens: null,
+    timeoutMs: 60_000,
+    keepAlive: null,
+    metadata: null,
+  };
+
+  assert.equal(
+    providerHealthSchema.safeParse({
+      providerId: "provider.remote_openai",
+      kind: "openai",
+      status: "healthy",
+      checkedAt: "2026-07-02T09:00:00.000Z",
+    }).success,
+    false,
+  );
+  assert.equal(
+    structuredGenerationRequestSchema.safeParse({ ...validRequest, model: "" }).success,
+    false,
+  );
+  assert.equal(
+    structuredGenerationRequestSchema.safeParse({ ...validRequest, prompt: "" }).success,
+    false,
+  );
+  assert.equal(
+    structuredGenerationRequestSchema.safeParse({ ...validRequest, timeoutMs: 99 }).success,
+    false,
+  );
+  assert.equal(
+    structuredGenerationRequestSchema.safeParse({ ...validRequest, maxTokens: 128_001 }).success,
+    false,
+  );
+  assert.equal(
+    structuredGenerationRequestSchema.safeParse({
+      ...validRequest,
+      responseSchema: { id: "x".repeat(161), schema: z.unknown() },
     }).success,
     false,
   );

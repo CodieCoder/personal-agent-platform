@@ -9,6 +9,7 @@ import type {
   ExecutionTraceStep,
   PlatformError,
   ThreadId,
+  TraceStepMetadata,
   TraceStepKind,
   TraceStepStatus,
   WorkspaceId,
@@ -34,6 +35,7 @@ export type AppendExecutionTraceStepInput = {
   completedAt?: string;
   errorCode?: string;
   errorMessage?: string;
+  metadata?: TraceStepMetadata;
 };
 
 export type CompleteExecutionTraceInput = {

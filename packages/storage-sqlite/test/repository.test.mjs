@@ -474,6 +474,11 @@ test("SqliteExecutionTraceRepository persists traces and ordered steps", async (
       summary: "validated input",
       startedAt,
       completedAt: nowIso(),
+      metadata: {
+        providerId: "provider.ollama",
+        model: "llama3.2:latest",
+        durationMs: 1250,
+      },
     });
 
     const completed = await repository.markCompleted({
@@ -489,6 +494,11 @@ test("SqliteExecutionTraceRepository persists traces and ordered steps", async (
 
     assert.equal(fetched?.steps[0]?.sequence, 0);
     assert.equal(fetched?.steps[1]?.sequence, 1);
+    assert.deepEqual(fetched?.steps[0]?.metadata, {
+      providerId: "provider.ollama",
+      model: "llama3.2:latest",
+      durationMs: 1250,
+    });
   } finally {
     close();
   }

@@ -326,9 +326,9 @@ Procedural memory
 
 ⸻
 
-6.6 @pap/llm
+6.6 @pap/ai
 
-LLM provider abstraction.
+AI provider abstraction.
 
 Initial provider:
 
@@ -354,7 +354,7 @@ Usage telemetry
 
 Capabilities must not call Ollama directly.
 
-They should use the LLM provider abstraction.
+They should use the AI provider abstraction.
 
 ⸻
 
@@ -786,7 +786,8 @@ Build only these first:
 @pap/runtime
 @pap/storage-sqlite
 @pap/memory
-@pap/llm-ollama
+@pap/ai
+@pap/ai-ollama
 @pap/tool-profile
 @pap/tool-memory
 @pap/tool-searxng

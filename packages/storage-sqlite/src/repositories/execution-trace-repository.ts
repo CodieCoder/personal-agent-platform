@@ -73,6 +73,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
       completedAt: input.completedAt,
       errorCode: input.errorCode,
       errorMessage: input.errorMessage,
+      metadataJson: input.metadata ? JSON.stringify(input.metadata) : null,
       createdAt: timestamp,
     });
 
@@ -323,6 +324,7 @@ function toExecutionTraceStep(row: ExecutionTraceStepRow): ExecutionTraceStep {
     completedAt: row.completedAt ?? undefined,
     errorCode: row.errorCode ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
+    metadata: row.metadataJson ? parseMetadataJson(row.metadataJson) : undefined,
     createdAt: row.createdAt,
   });
 }
@@ -333,4 +335,14 @@ function requireTrace(trace: ExecutionTrace | null, executionId: ExecutionId): E
   }
 
   return trace;
+}
+
+function parseMetadataJson(metadataJson: string): Record<string, unknown> | undefined {
+  const metadata = JSON.parse(metadataJson) as unknown;
+
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
+    return undefined;
+  }
+
+  return metadata as Record<string, unknown>;
 }
