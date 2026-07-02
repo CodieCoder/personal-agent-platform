@@ -7,6 +7,7 @@ import type {
   ExecutionStatus,
   ExecutionTrace,
   ExecutionTraceStep,
+  JsonValue,
   PlatformError,
   ThreadId,
   TraceStepMetadata,
@@ -41,6 +42,7 @@ export type AppendExecutionTraceStepInput = {
 export type CompleteExecutionTraceInput = {
   executionId: ExecutionId;
   completedAt: string;
+  output?: JsonValue;
 };
 
 export type FailExecutionTraceInput = {

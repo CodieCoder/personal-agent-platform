@@ -18,6 +18,7 @@ import {
   traceStepMetadataSchema,
   traceStepStatusSchema,
 } from "./execution.js";
+import type { ProviderHealth, ProviderId } from "./provider.js";
 
 export const capabilityPermissionSchema = z.enum([
   "profile.read",
@@ -176,6 +177,11 @@ const unknownFunctionSchema = z.custom<(input: unknown) => Promise<unknown>>(
   { message: "Expected an async function." },
 );
 
+const providerHealthFunctionSchema = z.custom<(providerId: ProviderId) => Promise<ProviderHealth>>(
+  (value) => typeof value === "function",
+  { message: "Expected a provider health function." },
+);
+
 const uiBuildFunctionSchema = z.custom<(blocks: unknown[]) => Promise<unknown[]>>(
   (value) => typeof value === "function",
   { message: "Expected a UI build function." },
@@ -208,6 +214,7 @@ export const capabilityExecutionContextSchema = z
     llm: z
       .object({
         generateStructured: unknownFunctionSchema,
+        getProviderHealth: providerHealthFunctionSchema,
       })
       .strict(),
     ui: z

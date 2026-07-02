@@ -380,6 +380,12 @@ test("capabilityExecutionContextSchema validates runtime context shape", () => {
     },
     llm: {
       generateStructured: async () => undefined,
+      getProviderHealth: async () => ({
+        providerId: "provider.local_ollama",
+        kind: "ollama",
+        status: "healthy",
+        checkedAt: "2026-07-02T09:00:00.000Z",
+      }),
     },
     ui: {
       build: async (blocks) => blocks,

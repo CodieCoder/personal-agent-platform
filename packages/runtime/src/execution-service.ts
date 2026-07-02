@@ -1,8 +1,14 @@
-import { isAIProviderError, type AIProviderError, type StructuredGenerationService } from "@pap/ai";
+import {
+  isAIProviderError,
+  type AIProviderError,
+  type AIProviderRegistry,
+  type StructuredGenerationService,
+} from "@pap/ai";
 import {
   capabilityExecutionContextSchema,
   capabilityExecutionRequestSchema,
   capabilityExecutionResultSchema,
+  jsonValueSchema,
   type CapabilityDefinition,
   type CapabilityExecutionContext,
   type CapabilityExecutionRequest,
@@ -12,6 +18,8 @@ import {
   type CapabilityTraceStepInput,
   type JsonValue,
   type PlatformError,
+  type ProviderHealth,
+  type ProviderId,
   type StructuredGenerationResult,
   type TraceStepMetadata,
 } from "@pap/contracts";
@@ -34,6 +42,7 @@ export type RuntimeExecutionServiceOptions = {
   logger?: PapLogger;
   clock?: RuntimeClock;
   structuredGenerationService?: StructuredGenerationService;
+  aiProviderRegistry?: AIProviderRegistry;
 };
 
 export class RuntimeExecutionService {
@@ -41,6 +50,7 @@ export class RuntimeExecutionService {
   private readonly traceRepository: ExecutionTraceRepository;
   private readonly memoryService: MemoryService | undefined;
   private readonly structuredGenerationService: StructuredGenerationService | undefined;
+  private readonly aiProviderRegistry: AIProviderRegistry | undefined;
   private readonly logger: PapLogger | undefined;
   private readonly clock: RuntimeClock | undefined;
 
@@ -49,6 +59,7 @@ export class RuntimeExecutionService {
     this.traceRepository = options.traceRepository;
     this.memoryService = options.memoryService;
     this.structuredGenerationService = options.structuredGenerationService;
+    this.aiProviderRegistry = options.aiProviderRegistry;
     this.logger = options.logger;
     this.clock = options.clock;
   }
@@ -158,7 +169,7 @@ export class RuntimeExecutionService {
         status: "completed",
         summary: "Runtime finalized the execution trace.",
       });
-      await trace.complete();
+      await trace.complete(jsonValueOrUndefined(parsedOutput.data));
       return this.buildResult({
         executionId,
         capabilityId: request.capabilityId,
@@ -275,6 +286,12 @@ export class RuntimeExecutionService {
             trace: input.trace,
             request: llmRequest,
           }),
+        getProviderHealth: async (providerId: ProviderId) =>
+          this.executeProviderHealthOperation({
+            capability: input.capability,
+            trace: input.trace,
+            providerId,
+          }),
       },
       ui: {
         build: async () => unavailableRuntimeFeature("ui"),
@@ -303,7 +320,7 @@ export class RuntimeExecutionService {
 
       await input.trace.addStep({
         kind: "llm",
-        name: "llm.generateStructured",
+        name: "invoke model",
         status: "failed",
         summary: "Capability lacks llm.generate.",
         errorCode: error.platformError.code,
@@ -322,7 +339,7 @@ export class RuntimeExecutionService {
 
       await input.trace.addStep({
         kind: "llm",
-        name: "llm.generateStructured",
+        name: "invoke model",
         status: "failed",
         summary: "Structured generation service is not configured.",
         errorCode: error.platformError.code,
@@ -338,10 +355,17 @@ export class RuntimeExecutionService {
 
       await input.trace.addStep({
         kind: "llm",
-        name: "llm.generateStructured",
+        name: "invoke model",
         status: "completed",
         summary: "Structured model generation completed.",
         metadata: buildLlmSuccessMetadata(result, input.request),
+      });
+      await input.trace.addStep({
+        kind: "validation",
+        name: "validate structured output",
+        status: "completed",
+        summary: "Structured model output matched the requested schema.",
+        metadata: buildStructuredOutputValidationMetadata(result, input.request),
       });
 
       return result;
@@ -358,13 +382,110 @@ export class RuntimeExecutionService {
 
       await input.trace.addStep({
         kind: "llm",
-        name: "llm.generateStructured",
+        name: "invoke model",
         status: "failed",
         summary: "Structured model generation failed.",
         errorCode: runtimeError.platformError.code,
         errorMessage: runtimeError.platformError.message,
         ...(isAIProviderError(error)
           ? { metadata: buildLlmErrorMetadata(error, input.request) }
+          : {}),
+      });
+
+      if (isAIProviderError(error) && error.code === "provider_schema_invalid") {
+        await input.trace.addStep({
+          kind: "validation",
+          name: "validate structured output",
+          status: "failed",
+          summary: "Structured model output failed schema validation.",
+          errorCode: runtimeError.platformError.code,
+          errorMessage: runtimeError.platformError.message,
+          metadata: buildStructuredOutputValidationErrorMetadata(error, input.request),
+        });
+      }
+
+      throw runtimeError;
+    }
+  }
+
+  private async executeProviderHealthOperation(input: {
+    capability: CapabilityDefinition;
+    trace: TraceWriter;
+    providerId: ProviderId;
+  }): Promise<ProviderHealth> {
+    if (!input.capability.manifest.permissions.includes("llm.generate")) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.llmPermissionDenied,
+        message: `Capability ${input.capability.manifest.id} does not have llm.generate.`,
+        category: "permission",
+        details: {
+          capabilityId: input.capability.manifest.id,
+          permission: "llm.generate",
+        },
+      });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "failed",
+        summary: "Capability lacks llm.generate.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    if (!this.aiProviderRegistry) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.runtimeFeatureUnavailable,
+        message: "Runtime feature is not available in this slice: llm",
+        category: "capability",
+        details: { feature: "llm" },
+      });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "failed",
+        summary: "AI provider registry is not configured.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    try {
+      const health = await this.aiProviderRegistry.get(input.providerId).health();
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "completed",
+        summary: "Runtime checked model provider health.",
+        metadata: buildProviderHealthMetadata(health),
+      });
+
+      return health;
+    } catch (error) {
+      const runtimeError = isAIProviderError(error)
+        ? createRuntimeErrorFromProviderError(error)
+        : createRuntimeSafeError({
+            code: runtimeErrorCodes.aiProviderFailure,
+            message: "Model provider health check failed.",
+            category: "llm",
+            details: { errorName: errorName(error) },
+            cause: error,
+          });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "failed",
+        summary: "Model provider health check failed.",
+        errorCode: runtimeError.platformError.code,
+        errorMessage: runtimeError.platformError.message,
+        ...(isAIProviderError(error)
+          ? { metadata: buildProviderHealthErrorMetadata(error, input.providerId) }
           : {}),
       });
 
@@ -552,6 +673,57 @@ function buildLlmSuccessMetadata(
   });
 }
 
+function buildStructuredOutputValidationMetadata(
+  result: StructuredGenerationResult,
+  request: unknown,
+): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: result.providerId,
+    model: result.model,
+    responseSchemaId: requestMetadataValue(request, "responseSchema", "id"),
+  });
+}
+
+function buildStructuredOutputValidationErrorMetadata(
+  error: AIProviderError,
+  request: unknown,
+): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: error.providerId ?? requestMetadataValue(request, "providerId"),
+    model: requestMetadataValue(request, "model"),
+    responseSchemaId:
+      providerDetailMetadataValue(error, "schemaId") ??
+      requestMetadataValue(request, "responseSchema", "id"),
+    errorKind: error.code,
+  });
+}
+
+function buildProviderHealthMetadata(health: ProviderHealth): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: health.providerId,
+    providerKind: health.kind,
+    healthStatus: health.status,
+    checkedAt: health.checkedAt,
+    model: health.model,
+    modelPresent: providerHealthMetadataValue(health, "modelPresent"),
+    modelCount: providerHealthMetadataValue(health, "modelCount"),
+    ollamaVersion: providerHealthMetadataValue(health, "ollamaVersion"),
+    errorKind: providerHealthMetadataValue(health, "errorKind"),
+    retryable: providerHealthMetadataValue(health, "retryable"),
+  });
+}
+
+function buildProviderHealthErrorMetadata(
+  error: AIProviderError,
+  providerId: ProviderId,
+): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: error.providerId ?? providerId,
+    errorKind: error.code,
+    retryable: error.retryable,
+  });
+}
+
 function buildLlmErrorMetadata(error: AIProviderError, request: unknown): TraceStepMetadata {
   return removeUndefinedValues({
     providerId: error.providerId ?? requestMetadataValue(request, "providerId"),
@@ -588,6 +760,22 @@ function requestMetadataValue(
   return primitiveMetadataValue(value);
 }
 
+function providerHealthMetadataValue(health: ProviderHealth, key: string): JsonValue | undefined {
+  if (!health.metadata || !(key in health.metadata)) {
+    return undefined;
+  }
+
+  return primitiveMetadataValue(health.metadata[key]);
+}
+
+function providerDetailMetadataValue(error: AIProviderError, key: string): JsonValue | undefined {
+  if (!error.details || !(key in error.details)) {
+    return undefined;
+  }
+
+  return primitiveMetadataValue(error.details[key]);
+}
+
 function primitiveMetadataValue(value: unknown): JsonValue | undefined {
   if (
     typeof value === "string" ||
@@ -605,6 +793,11 @@ function removeUndefinedValues(input: Record<string, JsonValue | undefined>): Tr
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined),
   ) as TraceStepMetadata;
+}
+
+function jsonValueOrUndefined(value: unknown): JsonValue | undefined {
+  const parsed = jsonValueSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function errorName(error: unknown): string {

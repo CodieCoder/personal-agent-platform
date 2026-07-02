@@ -13,6 +13,7 @@ export const executionTraces = sqliteTable(
     completedAt: text("completed_at"),
     errorCode: text("error_code"),
     errorMessage: text("error_message"),
+    outputJson: text("output_json"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

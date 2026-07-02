@@ -167,6 +167,7 @@ test("RuntimeExecutionService completes valid capability output", async () => {
     ["capability.test"],
   );
   assert.equal(repository.traces[0].status, "completed");
+  assert.deepEqual(repository.traces[0].output, { message: "hello" });
 });
 
 test("RuntimeExecutionService exposes service-backed memory reads with trace steps", async () => {
@@ -427,7 +428,7 @@ test("RuntimeExecutionService denies structured generation without manifest perm
     repository.steps
       .filter((step) => step.kind === "llm")
       .map((step) => `${step.name}:${step.status}:${step.errorCode}`),
-    ["llm.generateStructured:failed:CAPABILITY_LLM_PERMISSION_DENIED"],
+    ["invoke model:failed:CAPABILITY_LLM_PERMISSION_DENIED"],
   );
 });
 
@@ -660,6 +661,9 @@ class InMemoryTraceRepository {
     trace.status = "completed";
     trace.completedAt = input.completedAt;
     trace.updatedAt = input.completedAt;
+    if (input.output !== undefined) {
+      trace.output = input.output;
+    }
     delete trace.errorCode;
     delete trace.errorMessage;
     return this.cloneTrace(trace);
@@ -672,6 +676,7 @@ class InMemoryTraceRepository {
     trace.errorCode = input.error.code;
     trace.errorMessage = input.error.message;
     trace.updatedAt = input.completedAt;
+    delete trace.output;
     return this.cloneTrace(trace);
   }
 
@@ -682,6 +687,7 @@ class InMemoryTraceRepository {
     trace.errorCode = "EXECUTION_CANCELLED";
     trace.errorMessage = input.reason ?? "Execution cancelled.";
     trace.updatedAt = input.completedAt;
+    delete trace.output;
     return this.cloneTrace(trace);
   }
 

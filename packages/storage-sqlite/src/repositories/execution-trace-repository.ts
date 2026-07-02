@@ -50,6 +50,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
       completedAt: null,
       errorCode: null,
       errorMessage: null,
+      outputJson: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     });
@@ -98,6 +99,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
         completedAt: input.completedAt,
         errorCode: null,
         errorMessage: null,
+        outputJson: input.output === undefined ? null : JSON.stringify(input.output),
         updatedAt: nowIso(),
       })
       .where(eq(executionTraces.id, input.executionId));
@@ -114,6 +116,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
         completedAt: input.completedAt,
         errorCode: input.error.code,
         errorMessage: input.error.message,
+        outputJson: null,
         updatedAt: nowIso(),
       })
       .where(eq(executionTraces.id, input.executionId));
@@ -130,6 +133,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
         completedAt: input.completedAt,
         errorCode: "EXECUTION_CANCELLED",
         errorMessage: input.reason ?? "Execution cancelled.",
+        outputJson: null,
         updatedAt: nowIso(),
       })
       .where(eq(executionTraces.id, input.executionId));
@@ -293,6 +297,7 @@ function toExecutionTrace(row: ExecutionTraceRow, steps: ExecutionTraceStep[]): 
     completedAt: row.completedAt ?? undefined,
     errorCode: row.errorCode ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
+    output: row.outputJson ? parseJsonValue(row.outputJson) : undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     steps,
@@ -345,4 +350,8 @@ function parseMetadataJson(metadataJson: string): Record<string, unknown> | unde
   }
 
   return metadata as Record<string, unknown>;
+}
+
+function parseJsonValue(json: string): unknown {
+  return JSON.parse(json) as unknown;
 }

@@ -58,6 +58,7 @@ export function createRuntime(input: CreateRuntimeInput): Runtime {
     registry,
     traceRepository: input.traceRepository,
     structuredGenerationService,
+    aiProviderRegistry,
     ...(input.memoryService ? { memoryService: input.memoryService } : {}),
     ...(input.logger ? { logger: input.logger } : {}),
     ...(input.clock ? { clock: input.clock } : {}),

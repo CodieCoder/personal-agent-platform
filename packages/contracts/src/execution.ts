@@ -60,6 +60,7 @@ export const executionTraceSchema = z
     completedAt: isoDateTimeSchema.optional(),
     errorCode: platformErrorCodeSchema.optional(),
     errorMessage: z.string().min(1).optional(),
+    output: jsonValueSchema.optional(),
     createdAt: isoDateTimeSchema,
     updatedAt: isoDateTimeSchema,
     steps: z.array(executionTraceStepSchema).default([]),

@@ -17,6 +17,7 @@
     { "path": "./packages/storage-sqlite" },
     { "path": "./packages/testing" },
     { "path": "./packages/runtime" },
-    { "path": "./packages/capabilities/echo" }
+    { "path": "./packages/capabilities/echo" },
+    { "path": "./packages/capabilities/local-model-test" }
   ]
 }

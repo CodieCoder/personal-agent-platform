@@ -15,6 +15,7 @@ export default defineConfig({
             "packages/storage/test/**/*.test.mjs",
             "packages/testing/test/**/*.test.mjs",
             "packages/capabilities/echo/test/**/*.test.mjs",
+            "packages/capabilities/local-model-test/test/**/*.test.mjs",
           ],
         },
       }),

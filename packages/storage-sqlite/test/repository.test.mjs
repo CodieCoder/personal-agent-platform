@@ -484,16 +484,31 @@ test("SqliteExecutionTraceRepository persists traces and ordered steps", async (
     const completed = await repository.markCompleted({
       executionId,
       completedAt: nowIso(),
+      output: {
+        summary: "Completed trace output.",
+        keyPoints: ["Persisted output"],
+        confidence: 1,
+      },
     });
 
     assert.equal(completed.status, "completed");
     assert.equal(completed.workspaceId, "workspace_test");
+    assert.deepEqual(completed.output, {
+      summary: "Completed trace output.",
+      keyPoints: ["Persisted output"],
+      confidence: 1,
+    });
     assert.equal(completed.steps.map((step) => step.name).join(","), "first,second");
 
     const fetched = await repository.getById(executionId);
 
     assert.equal(fetched?.steps[0]?.sequence, 0);
     assert.equal(fetched?.steps[1]?.sequence, 1);
+    assert.deepEqual(fetched?.output, {
+      summary: "Completed trace output.",
+      keyPoints: ["Persisted output"],
+      confidence: 1,
+    });
     assert.deepEqual(fetched?.steps[0]?.metadata, {
       providerId: "provider.ollama",
       model: "llama3.2:latest",
@@ -770,6 +785,7 @@ test("createRuntime executes echo and persists a SQLite trace", async () => {
     assert.equal(trace?.id, result.traceId);
     assert.equal(trace?.capabilityId, "capability.echo");
     assert.equal(trace?.status, "completed");
+    assert.deepEqual(trace?.output, result.data);
     assert.deepEqual(
       trace?.steps.map((step) => step.name),
       ["validate input", "echo.normalize", "validate output", "finalize execution"],

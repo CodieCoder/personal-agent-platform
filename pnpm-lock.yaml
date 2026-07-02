@@ -41,6 +41,9 @@ importers:
       '@pap/capability-echo':
         specifier: workspace:*
         version: link:../../packages/capabilities/echo
+      '@pap/capability-local-model-test':
+        specifier: workspace:*
+        version: link:../../packages/capabilities/local-model-test
       '@pap/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -99,6 +102,9 @@ importers:
       '@pap/capability-echo':
         specifier: workspace:*
         version: link:../../packages/capabilities/echo
+      '@pap/capability-local-model-test':
+        specifier: workspace:*
+        version: link:../../packages/capabilities/local-model-test
       '@pap/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -151,6 +157,22 @@ importers:
       '@pap/shared':
         specifier: workspace:*
         version: link:../../shared
+
+  packages/capabilities/local-model-test:
+    dependencies:
+      '@pap/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@pap/shared':
+        specifier: workspace:*
+        version: link:../../shared
+    devDependencies:
+      '@pap/ai':
+        specifier: workspace:*
+        version: link:../../ai
+      '@pap/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
 
   packages/contracts:
     dependencies:

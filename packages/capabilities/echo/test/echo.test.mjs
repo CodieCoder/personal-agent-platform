@@ -86,6 +86,7 @@ function createEchoContext(steps) {
     },
     llm: {
       generateStructured: failIfCalled,
+      getProviderHealth: failIfCalled,
     },
     ui: {
       build: failIfCalled,

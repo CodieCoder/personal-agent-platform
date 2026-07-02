@@ -2,6 +2,7 @@ import "@tanstack/react-start/server-only";
 
 import { createOllamaProviderRegistry } from "@pap/ai-ollama";
 import { echoCapability } from "@pap/capability-echo";
+import { localModelTestCapability } from "@pap/capability-local-model-test";
 import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
 import {
@@ -68,7 +69,7 @@ export function getWebRuntimeState(): WebRuntimeState {
   const runtime = createRuntime({
     traceRepository,
     memoryService,
-    capabilities: [echoCapability],
+    capabilities: [echoCapability, localModelTestCapability],
     logger,
     aiProviderRegistry,
   });

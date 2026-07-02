@@ -1,4 +1,5 @@
 import { echoCapability } from "@pap/capability-echo";
+import { localModelTestCapability } from "@pap/capability-local-model-test";
 import { createOllamaProviderRegistry } from "@pap/ai-ollama";
 import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
@@ -57,7 +58,7 @@ export function createWorkerRuntimeState(): WorkerRuntimeState {
   const runtime = createRuntime({
     traceRepository,
     memoryService,
-    capabilities: [echoCapability],
+    capabilities: [echoCapability, localModelTestCapability],
     logger,
     aiProviderRegistry,
   });
