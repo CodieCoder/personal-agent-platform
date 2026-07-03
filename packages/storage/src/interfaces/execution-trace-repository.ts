@@ -1,11 +1,16 @@
 import type {
   CapabilityId,
   ExecutionId,
+  ExecutionTraceListPage,
+  ExecutionTraceListQuery,
+  ExecutionTraceStepId,
   ExecutionStatus,
   ExecutionTrace,
   ExecutionTraceStep,
+  JsonValue,
   PlatformError,
   ThreadId,
+  TraceStepMetadata,
   TraceStepKind,
   TraceStepStatus,
   WorkspaceId,
@@ -20,7 +25,7 @@ export type CreateExecutionTraceInput = {
 };
 
 export type AppendExecutionTraceStepInput = {
-  id: string;
+  id: ExecutionTraceStepId;
   executionId: ExecutionId;
   sequence: number;
   kind: TraceStepKind;
@@ -31,11 +36,13 @@ export type AppendExecutionTraceStepInput = {
   completedAt?: string;
   errorCode?: string;
   errorMessage?: string;
+  metadata?: TraceStepMetadata;
 };
 
 export type CompleteExecutionTraceInput = {
   executionId: ExecutionId;
   completedAt: string;
+  output?: JsonValue;
 };
 
 export type FailExecutionTraceInput = {
@@ -56,6 +63,8 @@ export type ListRecentExecutionTracesInput = {
   capabilityId?: CapabilityId;
 };
 
+export type ListExecutionTracesPageInput = ExecutionTraceListQuery;
+
 export interface ExecutionTraceRepository {
   create(input: CreateExecutionTraceInput): Promise<ExecutionTrace>;
   appendStep(input: AppendExecutionTraceStepInput): Promise<ExecutionTraceStep>;
@@ -64,4 +73,5 @@ export interface ExecutionTraceRepository {
   markCancelled(input: CancelExecutionTraceInput): Promise<ExecutionTrace>;
   getById(executionId: ExecutionId): Promise<ExecutionTrace | null>;
   listRecent(input?: ListRecentExecutionTracesInput): Promise<ExecutionTrace[]>;
+  listPage(input?: Partial<ListExecutionTracesPageInput>): Promise<ExecutionTraceListPage>;
 }

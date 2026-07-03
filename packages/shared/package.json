@@ -18,7 +18,7 @@
     "build": "tsc -b tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "biome lint .",
-    "test": "pnpm run build && node --test test/*.test.mjs"
+    "test": "pnpm run build && vitest run test"
   },
   "dependencies": {
     "pino": "^10.1.0",

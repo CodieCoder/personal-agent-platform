@@ -15,7 +15,8 @@
       "!coverage",
       "!dist",
       "!build",
-      "!.output"
+      "!.output",
+      "!**/routeTree.gen.ts"
     ]
   },
   "formatter": {

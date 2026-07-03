@@ -1,0 +1,1 @@
+CREATE INDEX `execution_traces_workspace_started_at_idx` ON `execution_traces` (`workspace_id`,`started_at`);

@@ -20,7 +20,7 @@ This directory contains product, architecture, backlog, and implementation plann
 - `14-roadmap.md`
 - `15-architecture-decision-records.md`
 - `16-repository-bootstrap-plan.md`
-- `17-phase-0-1-backlog.md`
+- `backlogs/17-phase-0-1-backlog.md`
 
 ## Folders
 

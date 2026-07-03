@@ -10,13 +10,13 @@ Read these docs before planning broad changes:
 - `docs/02-product-principles.md`
 - `docs/15-architecture-decision-records.md`
 - `docs/16-repository-bootstrap-plan.md`
-- `docs/17-phase-0-1-backlog.md`
+- `docs/backlogs/17-phase-0-1-backlog.md`
 
 Accepted ADRs win unless a documented revisit trigger applies.
 
 ## Current Implementation Scope
 
-The current implemented slice is PAP-001 through PAP-007 only:
+The current implemented slice is PAP-001 through PAP-031 plus PAP-037, PAP-040, and PAP-044:
 
 - Root repository metadata.
 - pnpm workspace configuration.
@@ -24,10 +24,31 @@ The current implemented slice is PAP-001 through PAP-007 only:
 - Biome formatting and linting.
 - Strict TypeScript base configuration.
 - Shared workspace packages for contracts, utilities, storage interfaces, and testing helpers.
+- SQLite trace storage with Drizzle, `better-sqlite3`, and committed migrations.
+- SQLite semantic and episodic memory storage with Drizzle, `better-sqlite3`, and committed
+  migrations.
+- Runtime contracts, in-memory capability registry, trace writer, execution service, and
+  dependency-injected runtime factory.
+- Framework-neutral `@pap/memory` service for semantic and episodic memory policy, provenance
+  validation, and runtime-facing memory access.
+- Core echo capability package with package-local runtime skill files.
+- TanStack Start web app for running echo and inspecting persisted execution traces.
+- TanStack Start server functions for bounded memory list/get/create/update/expire/delete and
+  semantic proposal approve/reject workflows.
+- Standalone worker app with startup logging and a health command.
+- Vitest unit and integration test baseline.
+- Playwright echo smoke test.
+- QA-Intel echo feature executed through `@qutecoder/qa-intel` with a local app launcher.
+- Docker images for the TanStack Start web app and worker.
+- Local-first Compose baseline with `web`, `worker`, and a named `pap-data` volume.
+- GitHub Actions CI for format, lint, typecheck, unit tests, integration tests, build, and
+  Playwright smoke.
 - Generic coding-agent docs under `agents/`.
 
-Do not add application code, concrete database code, Docker, runtime implementation packages,
-or capabilities until the corresponding backlog ticket is active.
+Do not add Dockerized Ollama, SearXNG, reverse proxy, deployment publishing, real worker scheduling,
+additional runtime capabilities, tool registry, skill loader, approval, research, email, document,
+vector, source-profile persistence, Memory Explorer UI, context tools, or UI beyond the PAP-018 to
+PAP-021 echo and trace screens until the corresponding backlog ticket is active.
 
 ## Planning Trace
 
@@ -46,8 +67,11 @@ and explicit out-of-scope items.
 Use `agents/rules/` for repository-wide coding-agent rules.
 Use `agents/skills/` for generic coding-agent skills that help work on this repository.
 
+Before creating git commits or drafting commit messages, read and follow
+`agents/skills/commit-message/SKILL.md`.
+
 Do not use the root `skills/` directory for coding-agent workflow docs. Product runtime skills
-will be introduced by later capability/runtime tickets.
+belong inside their owning capability packages, such as `packages/capabilities/echo/skills/`.
 
 ## Safety Boundaries
 

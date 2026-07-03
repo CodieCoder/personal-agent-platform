@@ -1,0 +1,41 @@
+{
+  "name": "@pap/storage-sqlite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "drizzle"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @pap/storage build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/storage build && tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint .",
+    "test": "pnpm run test:integration",
+    "test:integration": "pnpm --filter @pap/testing build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm run build && vitest run test",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "pnpm run build && node dist/migrations.js"
+  },
+  "dependencies": {
+    "@pap/contracts": "workspace:*",
+    "@pap/shared": "workspace:*",
+    "@pap/storage": "workspace:*",
+    "better-sqlite3": "^12.11.1",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@pap/capability-echo": "workspace:*",
+    "@pap/testing": "workspace:*",
+    "@pap/runtime": "workspace:*",
+    "@types/better-sqlite3": "^7.6.13",
+    "drizzle-kit": "^0.31.10"
+  }
+}

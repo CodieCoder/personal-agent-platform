@@ -1,0 +1,27 @@
+{
+  "name": "@pap/tools-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @pap/contracts build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/contracts build && tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint .",
+    "test": "pnpm run build && vitest run test"
+  },
+  "dependencies": {
+    "@pap/contracts": "workspace:*",
+    "zod": "^4.2.0"
+  }
+}

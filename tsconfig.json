@@ -6,9 +6,21 @@
   },
   "files": [],
   "references": [
+    { "path": "./apps/worker" },
+    { "path": "./apps/web" },
     { "path": "./packages/contracts" },
+    { "path": "./packages/ai" },
+    { "path": "./packages/ai-ollama" },
+    { "path": "./packages/tools-search" },
+    { "path": "./packages/tools-search-searxng" },
+    { "path": "./packages/tools-web" },
     { "path": "./packages/shared" },
     { "path": "./packages/storage" },
-    { "path": "./packages/testing" }
+    { "path": "./packages/memory" },
+    { "path": "./packages/storage-sqlite" },
+    { "path": "./packages/testing" },
+    { "path": "./packages/runtime" },
+    { "path": "./packages/capabilities/echo" },
+    { "path": "./packages/capabilities/local-model-test" }
   ]
 }

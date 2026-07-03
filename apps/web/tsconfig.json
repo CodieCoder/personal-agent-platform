@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "target": "ES2023",
+    "tsBuildInfoFile": ".tsbuildinfo",
+    "types": ["node", "vite/client"],
+    "verbatimModuleSyntax": false
+  },
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/ai" },
+    { "path": "../../packages/ai-ollama" },
+    { "path": "../../packages/tools-search" },
+    { "path": "../../packages/tools-search-searxng" },
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/memory" },
+    { "path": "../../packages/storage-sqlite" },
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/capabilities/echo" }
+  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+}

@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { parseEnv } from "node:util";
 import { z } from "zod";
 
 function booleanEnvironmentSchema(defaultValue: boolean) {
@@ -19,6 +22,8 @@ export const serverEnvironmentSchema = z
     PAP_ALLOW_REMOTE_ACCESS: booleanEnvironmentSchema(false),
     PAP_AUTH_MODE: authModeSchema.default("none"),
     PAP_TRUSTED_PROXY: booleanEnvironmentSchema(false),
+    PAP_DATABASE_URL: z.string().min(1).default("file:./data/pap.db"),
+    PAP_DATA_DIR: z.string().min(1).default("./data"),
     PAP_LOG_LEVEL: z
       .enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"])
       .default("info"),
@@ -35,6 +40,25 @@ export type EnvironmentValidation = {
   env: ServerEnvironment;
   warnings: string[];
 };
+
+export type LoadRepositoryEnvironmentInput = {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+};
+
+export function loadRepositoryEnvironment(
+  input: LoadRepositoryEnvironmentInput = {},
+): Record<string, string | undefined> {
+  const env = input.env ?? process.env;
+  const cwd = input.cwd ?? env.INIT_CWD ?? process.cwd();
+  const repositoryRoot = findRepositoryRoot(cwd);
+  const fileEnv = loadEnvironmentFiles(repositoryRoot);
+
+  return {
+    ...fileEnv,
+    ...env,
+  };
+}
 
 export function validateEnvironment(
   input: Record<string, string | undefined> = process.env,
@@ -59,4 +83,36 @@ export function getBrowserSafeEnvironment(
   return {
     PAP_ENVIRONMENT: env.PAP_ENVIRONMENT,
   };
+}
+
+function findRepositoryRoot(cwd: string): string {
+  let current = resolve(cwd);
+
+  while (true) {
+    if (existsSync(join(current, "pnpm-workspace.yaml"))) {
+      return current;
+    }
+
+    const parent = dirname(current);
+
+    if (parent === current) {
+      return resolve(cwd);
+    }
+
+    current = parent;
+  }
+}
+
+function loadEnvironmentFiles(repositoryRoot: string): Record<string, string> {
+  const loaded: Record<string, string> = {};
+
+  for (const fileName of [".env", ".env.local"]) {
+    const filePath = join(repositoryRoot, fileName);
+
+    if (existsSync(filePath)) {
+      Object.assign(loaded, parseEnv(readFileSync(filePath, "utf8")));
+    }
+  }
+
+  return loaded;
 }

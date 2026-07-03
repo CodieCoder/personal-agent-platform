@@ -1,0 +1,13 @@
+{
+  "id": "skill.local-model-test",
+  "version": "0.1.0",
+  "capabilityId": "capability.local-model-test",
+  "title": "Local Model Test",
+  "description": "Runs one bounded local model prompt and validates structured output.",
+  "rootPath": "./skills/local-model-test",
+  "entryFile": "SKILL.md",
+  "references": [],
+  "examples": [],
+  "allowedTools": [],
+  "maxToolCalls": 0
+}

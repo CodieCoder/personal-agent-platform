@@ -1,0 +1,1 @@
+ALTER TABLE `execution_traces` ADD `output_json` text;
