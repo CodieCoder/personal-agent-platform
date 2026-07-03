@@ -8,6 +8,8 @@ import {
 } from "../packages/storage-sqlite/src/index.js";
 import { createMemoryService } from "../packages/memory/src/index.js";
 
+const usesExternalBaseUrl = process.env.PLAYWRIGHT_BASE_URL !== undefined;
+
 test("user runs echo in a selected workspace and sees the persisted trace", async ({ page }) => {
   const ids = testIds("echo");
   await seed((fixture) =>
@@ -38,6 +40,44 @@ test("user runs echo in a selected workspace and sees the persisted trace", asyn
   await expect(page.getByText("validate input")).toBeVisible();
   await expect(page.getByText("echo.normalize")).toBeVisible();
   await expect(page.getByText("finalize execution")).toBeVisible();
+});
+
+test("user sees disabled local model provider state and failed trace evidence", async ({
+  page,
+}) => {
+  test.skip(
+    usesExternalBaseUrl,
+    "This check requires the Playwright-managed web server with OLLAMA_ENABLED=false.",
+  );
+
+  const ids = testIds("model");
+  await seed((fixture) =>
+    fixture.workspaceRepository.create({
+      id: ids.workspaceAlpha,
+      name: "Model Alpha",
+      description: "Local model test workspace.",
+    }),
+  );
+
+  await page.goto(`/model-test?workspaceId=${ids.workspaceAlpha}`);
+
+  await expect(page.getByRole("heading", { name: "Local model test" })).toBeVisible();
+  await expect(page.locator('[data-model-test-ready="true"]')).toBeVisible();
+  await expect(page.getByText("provider.ollama").first()).toBeVisible();
+  await expect(page.getByText("disabled").first()).toBeVisible();
+
+  await page.getByLabel("Prompt").fill("Summarize the local model test path.");
+  await page.getByRole("button", { name: "Run local model" }).click();
+
+  await expect(page.getByRole("alert")).toContainText("AI_PROVIDER_DISABLED");
+  await expect(page.getByText("Enable Ollama on the server")).toBeVisible();
+  await page.getByRole("link", { name: "Open failed execution detail" }).click();
+
+  await expect(page.getByRole("heading", { name: "Execution detail" })).toBeVisible();
+  await expect(page.getByText("provider health check")).toBeVisible();
+  await expect(page.getByText("provider.ollama").first()).toBeVisible();
+  await expect(page.getByText("health status")).toBeVisible();
+  await expect(page.getByText("disabled").first()).toBeVisible();
 });
 
 test("user filters execution history and opens a trace from filtered results", async ({ page }) => {

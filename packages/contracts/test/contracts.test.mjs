@@ -18,12 +18,22 @@ import {
   executionTraceListPageSchema,
   executionTraceListQuerySchema,
   executionStatusSchema,
+  fetchErrorSchema,
+  fetchRedirectSchema,
+  fetchRequestSchema,
+  fetchResultSchema,
+  fetchWarningSchema,
   listWorkspacesRequestSchema,
   semanticMemoryQuerySchema,
   semanticMemoryRecordSchema,
   parsePlatformError,
   platformErrorSchema,
   providerHealthSchema,
+  searchProviderErrorSchema,
+  searchProviderHealthSchema,
+  searchRequestSchema,
+  searchResponseSchema,
+  searchResultSchema,
   structuredGenerationRequestSchema,
   structuredGenerationResultSchema,
   updateWorkspaceRequestSchema,
@@ -192,6 +202,238 @@ test("AI provider contracts reject unsupported provider kinds and bounded reques
       ...validRequest,
       responseSchema: { id: "x".repeat(161), schema: z.unknown() },
     }).success,
+    false,
+  );
+});
+
+test("search contracts validate bounded requests and nullable defaults", () => {
+  const request = searchRequestSchema.parse({
+    query: "  local search  ",
+  });
+
+  assert.equal(request.query, "local search");
+  assert.equal(request.page, null);
+  assert.equal(request.pageSize, 10);
+  assert.equal(request.language, null);
+  assert.equal(request.safesearch, null);
+  assert.equal(request.categories, null);
+  assert.equal(request.timeRange, null);
+  assert.equal(request.providerId, null);
+  assert.equal(searchRequestSchema.safeParse({ query: "" }).success, false);
+  assert.equal(searchRequestSchema.safeParse({ query: "x", page: 0 }).success, false);
+  assert.equal(searchRequestSchema.safeParse({ query: "x", page: 101 }).success, false);
+  assert.equal(searchRequestSchema.safeParse({ query: "x", pageSize: 51 }).success, false);
+  assert.equal(
+    searchRequestSchema.safeParse({
+      query: "x",
+      categories: Array.from({ length: 9 }, (_, index) => `category_${index}`),
+    }).success,
+    false,
+  );
+  assert.equal(searchRequestSchema.safeParse({ query: "x", language: "e" }).success, false);
+  assert.equal(searchRequestSchema.safeParse({ query: "x", safesearch: 3 }).success, false);
+  assert.equal(searchRequestSchema.safeParse({ query: "x", timeRange: "week" }).success, false);
+});
+
+test("search result contracts normalize HTTP URLs and reject unsafe schemes or credentials", () => {
+  const result = searchResultSchema.parse({
+    title: "Example",
+    url: "https://Example.com/a path?q=1",
+    displayUrl: "example.com/a path",
+    snippet: null,
+    publishedAt: null,
+    engine: "duckduckgo",
+    category: "general",
+    score: null,
+  });
+
+  assert.equal(result.url, "https://example.com/a%20path?q=1");
+  assert.equal(
+    searchResultSchema.safeParse({
+      ...result,
+      url: "ftp://example.com/file",
+    }).success,
+    false,
+  );
+  assert.equal(
+    searchResultSchema.safeParse({
+      ...result,
+      url: "https://user:pass@example.com/",
+    }).success,
+    false,
+  );
+});
+
+test("search response, provider health, and provider error contracts validate safe shapes", () => {
+  const response = searchResponseSchema.parse({
+    providerId: "provider.searxng",
+    query: "local search",
+    page: 1,
+    pageSize: 2,
+    results: [
+      {
+        title: "Example",
+        url: "https://example.com/",
+        displayUrl: "example.com",
+        snippet: "A search result.",
+        publishedAt: "2026-07-02T09:00:00.000Z",
+        engine: "duckduckgo",
+        category: "general",
+        score: 1,
+      },
+    ],
+    startedAt: "2026-07-02T09:00:00.000Z",
+    completedAt: "2026-07-02T09:00:00.250Z",
+    durationMs: 250,
+    safety: {
+      safesearch: 1,
+      language: "en",
+      categories: ["general"],
+      timeRange: "day",
+      resultCount: 1,
+      omittedResultCount: 0,
+      normalizedUrlCount: 1,
+    },
+  });
+  const health = searchProviderHealthSchema.parse({
+    providerId: "provider.searxng",
+    kind: "searxng",
+    status: "healthy",
+    checkedAt: "2026-07-02T09:00:00.000Z",
+  });
+  const error = searchProviderErrorSchema.parse({
+    kind: "search_provider_timeout",
+    providerId: "provider.searxng",
+    message: "Search timed out.",
+    retryable: true,
+    details: { retryable: true },
+  });
+
+  assert.equal(response.warnings.length, 0);
+  assert.equal(health.status, "healthy");
+  assert.equal(error.retryable, true);
+  assert.equal(
+    searchResponseSchema.safeParse({
+      ...response,
+      startedAt: "2026-07-02T09:00:01.000Z",
+      completedAt: "2026-07-02T09:00:00.000Z",
+    }).success,
+    false,
+  );
+  assert.equal(
+    searchProviderHealthSchema.safeParse({
+      providerId: "provider.searxng",
+      kind: "remote",
+      status: "healthy",
+      checkedAt: "2026-07-02T09:00:00.000Z",
+    }).success,
+    false,
+  );
+});
+
+test("fetch contracts validate bounded requests and safe URL normalization", () => {
+  const request = fetchRequestSchema.parse({
+    url: "https://Example.com/a path?q=1",
+  });
+
+  assert.equal(request.url, "https://example.com/a%20path?q=1");
+  assert.equal(request.timeoutMs, null);
+  assert.equal(request.maxBytes, null);
+  assert.equal(request.allowRedirects, null);
+  assert.equal(request.maxRedirects, null);
+  assert.equal(request.acceptedContentTypes, null);
+  assert.equal(request.workspaceId, null);
+  assert.equal(request.sourceProfileId, null);
+  assert.equal(fetchRequestSchema.safeParse({ url: "ftp://example.com/file" }).success, false);
+  assert.equal(
+    fetchRequestSchema.safeParse({ url: "https://user:pass@example.com/" }).success,
+    false,
+  );
+  assert.equal(
+    fetchRequestSchema.safeParse({ url: "https://example.com/", timeoutMs: 99 }).success,
+    false,
+  );
+  assert.equal(
+    fetchRequestSchema.safeParse({ url: "https://example.com/", maxBytes: 0 }).success,
+    false,
+  );
+  assert.equal(
+    fetchRequestSchema.safeParse({ url: "https://example.com/", maxRedirects: 11 }).success,
+    false,
+  );
+  assert.equal(
+    fetchRequestSchema.safeParse({
+      url: "https://example.com/",
+      acceptedContentTypes: ["application/pdf"],
+    }).success,
+    false,
+  );
+});
+
+test("fetch result, redirect, warning, metadata, and error contracts validate safe shapes", () => {
+  const redirect = fetchRedirectSchema.parse({
+    fromUrl: "https://example.com/start",
+    toUrl: "https://example.com/final",
+    statusCode: 302,
+  });
+  const warning = fetchWarningSchema.parse({
+    code: "fetch_redirect_followed",
+    message: "Redirect followed.",
+    count: 1,
+  });
+  const result = fetchResultSchema.parse({
+    requestedUrl: "https://example.com/start",
+    finalUrl: "https://example.com/final",
+    statusCode: 200,
+    contentType: "text/html",
+    contentLength: 18,
+    html: "<h1>Hello</h1>",
+    text: null,
+    redirects: [redirect],
+    startedAt: "2026-07-03T09:00:00.000Z",
+    completedAt: "2026-07-03T09:00:00.250Z",
+    durationMs: 250,
+    warnings: [warning],
+    metadata: {
+      timeoutMs: 15_000,
+      maxBytes: 1_000_000,
+      allowRedirects: true,
+      maxRedirects: 5,
+      acceptedContentTypes: ["text/html", "text/plain"],
+      redirectCount: 1,
+      contentBytes: 14,
+      responseSizeKnown: true,
+    },
+  });
+  const error = fetchErrorSchema.parse({
+    kind: "fetch_timeout",
+    message: "Fetch timed out.",
+    retryable: true,
+    details: { retryable: true },
+  });
+
+  assert.equal(result.finalUrl, "https://example.com/final");
+  assert.equal(result.warnings[0].code, "fetch_redirect_followed");
+  assert.equal(error.retryable, true);
+  assert.equal(fetchRedirectSchema.safeParse({ ...redirect, statusCode: 200 }).success, false);
+  assert.equal(
+    fetchResultSchema.safeParse({
+      ...result,
+      html: "<h1>Hello</h1>",
+      text: "Hello",
+    }).success,
+    false,
+  );
+  assert.equal(
+    fetchResultSchema.safeParse({
+      ...result,
+      startedAt: "2026-07-03T09:00:01.000Z",
+      completedAt: "2026-07-03T09:00:00.000Z",
+    }).success,
+    false,
+  );
+  assert.equal(
+    fetchErrorSchema.safeParse({ kind: "fetch_unknown", message: "Nope." }).success,
     false,
   );
 });

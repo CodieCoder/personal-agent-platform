@@ -107,7 +107,7 @@ test("createDisabledOllamaProviderHealth returns provider health shape", () => {
   assert.deepEqual(health, {
     providerId: "provider.local_ollama",
     kind: "ollama",
-    status: "unavailable",
+    status: "disabled",
     checkedAt: "2026-07-02T09:00:00.000Z",
     message: "Ollama provider is disabled by configuration.",
   });

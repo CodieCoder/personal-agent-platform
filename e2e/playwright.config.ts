@@ -52,6 +52,7 @@ export default defineConfig({
             PAP_E2E_DATABASE_URL: generatedDatabaseUrl,
             PAP_DATA_DIR: dataDir,
             PAP_LOG_LEVEL: "silent",
+            OLLAMA_ENABLED: "false",
           },
         },
       }),

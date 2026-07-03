@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { createAIProviderRegistry } from "@pap/ai";
+import { createSearchProviderRegistry } from "@pap/tools-search";
 import { z } from "@pap/contracts";
 import {
   CapabilityRegistry,
@@ -457,6 +458,36 @@ test("Runtime exposes provider health through provider-neutral registry", async 
   );
 });
 
+test("Runtime exposes search providers through provider-neutral registry and service", async () => {
+  const repository = new InMemoryTraceRepository();
+  const provider = createSearchProvider();
+  const runtime = createRuntime({
+    traceRepository: repository,
+    searchProviderRegistry: createSearchProviderRegistry([provider]),
+    defaultSearchProviderId: provider.id,
+    capabilities: [createCapability()],
+  });
+
+  const result = await runtime.search({ query: "  runtime search  " });
+  const health = await runtime.getSearchProviderHealth(provider.id);
+  const allHealth = await runtime.listSearchProviderHealth();
+
+  assert.equal(runtime.getSearchProvider(provider.id), provider);
+  assert.deepEqual(
+    runtime.listSearchProviders().map((candidate) => candidate.id),
+    [provider.id],
+  );
+  assert.equal(result.query, "runtime search");
+  assert.equal(result.providerId, provider.id);
+  assert.equal(provider.requests.length, 1);
+  assert.equal(health.status, "healthy");
+  assert.deepEqual(allHealth, [health]);
+  await assert.rejects(
+    () => runtime.getSearchProviderHealth("provider.missing"),
+    (error) => error.name === "SearchProviderError" && error.code === "search_provider_not_found",
+  );
+});
+
 test("RuntimeExecutionService fails traces for invalid output", async () => {
   const repository = new InMemoryTraceRepository();
   const registry = new CapabilityRegistry();
@@ -601,6 +632,59 @@ function createAIProvider(overrides = {}) {
         promptTokenCount: 4,
         completionTokenCount: 2,
         totalTokenCount: 6,
+      };
+    },
+  };
+
+  return provider;
+}
+
+function createSearchProvider(overrides = {}) {
+  const requests = [];
+  const provider = {
+    id: overrides.id ?? "provider.searxng",
+    requests,
+    async health() {
+      return {
+        providerId: provider.id,
+        kind: "searxng",
+        status: "healthy",
+        checkedAt: fixedNow,
+      };
+    },
+    async search(request) {
+      requests.push(request);
+
+      return {
+        providerId: provider.id,
+        query: request.query,
+        page: request.page ?? 1,
+        pageSize: request.pageSize,
+        results: [
+          {
+            title: "Runtime result",
+            url: "https://example.com/",
+            displayUrl: "example.com",
+            snippet: null,
+            publishedAt: null,
+            engine: "test",
+            category: "general",
+            score: null,
+          },
+        ],
+        startedAt: fixedNow,
+        completedAt: fixedNow,
+        durationMs: 0,
+        safety: {
+          safesearch: request.safesearch,
+          language: request.language,
+          categories: request.categories,
+          timeRange: request.timeRange,
+          resultCount: 1,
+          omittedResultCount: 0,
+          normalizedUrlCount: 1,
+        },
+        warnings: [],
       };
     },
   };

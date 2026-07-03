@@ -15,8 +15,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm --filter @pap/memory build && pnpm --filter @pap/ai build && tsc -b tsconfig.json",
-    "typecheck": "pnpm --filter @pap/memory build && pnpm --filter @pap/ai build && tsc --noEmit -p tsconfig.json",
+    "build": "pnpm --filter @pap/memory build && pnpm --filter @pap/ai build && pnpm --filter @pap/tools-search build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/memory build && pnpm --filter @pap/ai build && pnpm --filter @pap/tools-search build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint .",
     "test": "pnpm run build && vitest run test/runtime.test.mjs"
   },
@@ -25,6 +25,7 @@
     "@pap/contracts": "workspace:*",
     "@pap/memory": "workspace:*",
     "@pap/shared": "workspace:*",
-    "@pap/storage": "workspace:*"
+    "@pap/storage": "workspace:*",
+    "@pap/tools-search": "workspace:*"
   }
 }

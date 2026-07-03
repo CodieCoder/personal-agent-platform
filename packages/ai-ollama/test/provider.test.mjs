@@ -83,7 +83,9 @@ test("OllamaClient normalizes connection refusal, timeout, and HTTP 503", async 
     keepAlive: "5m",
     fetch: async () => {
       throw Object.assign(new TypeError("fetch failed"), {
-        cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+        cause: Object.assign(new Error("connect ECONNREFUSED"), {
+          code: "ECONNREFUSED",
+        }),
       });
     },
   });
@@ -232,7 +234,9 @@ test("OllamaProvider health reports degraded and unavailable states", async () =
       keepAlive: "5m",
       fetch: async () => {
         throw Object.assign(new TypeError("fetch failed"), {
-          cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+          cause: Object.assign(new Error("connect ECONNREFUSED"), {
+            code: "ECONNREFUSED",
+          }),
         });
       },
     }),
@@ -251,7 +255,7 @@ test("OllamaProvider health reports degraded and unavailable states", async () =
     },
   });
 
-  assert.equal((await disabledProvider.health()).status, "unavailable");
+  assert.equal((await disabledProvider.health()).status, "disabled");
   await assert.rejects(
     () =>
       disabledProvider.generateStructured({
@@ -268,6 +272,31 @@ test("OllamaProvider health reports degraded and unavailable states", async () =
       }),
     (error) => isProviderError(error, "provider_disabled", false),
   );
+});
+
+test("OllamaProvider health accepts case-only model tag differences", async () => {
+  const provider = new OllamaProvider({
+    providerId,
+    config: {
+      ...enabledConfig(),
+      defaultModel: "gemma4:e4b",
+    },
+    client: new OllamaClient({
+      baseUrl: "http://127.0.0.1:11434",
+      timeoutMs: 60_000,
+      keepAlive: "5m",
+      fetch: sequenceFetch([
+        jsonResponse({ version: "0.5.0" }),
+        jsonResponse({ models: [{ name: "gemma4:e4b" }] }),
+      ]),
+    }),
+  });
+
+  const health = await provider.health();
+
+  assert.equal(health.status, "healthy");
+  assert.equal(health.model, "gemma4:e4b");
+  assert.equal(health.metadata.modelPresent, true);
 });
 
 test("Ollama runtime registration defaults disabled unless explicitly enabled", () => {

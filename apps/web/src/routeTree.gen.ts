@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspacesRouteImport } from './routes/workspaces'
+import { Route as ModelTestRouteImport } from './routes/model-test'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as ExecutionsRouteImport } from './routes/executions'
 import { Route as IndexRouteImport } from './routes/index'
@@ -22,6 +23,11 @@ import { Route as ExecutionsExecutionIdRouteImport } from './routes/executions.$
 const WorkspacesRoute = WorkspacesRouteImport.update({
   id: '/workspaces',
   path: '/workspaces',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModelTestRoute = ModelTestRouteImport.update({
+  id: '/model-test',
+  path: '/model-test',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MemoryRoute = MemoryRouteImport.update({
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/executions': typeof ExecutionsRouteWithChildren
   '/memory': typeof MemoryRouteWithChildren
+  '/model-test': typeof ModelTestRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
   '/memory/$memoryId': typeof MemoryMemoryIdRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/executions': typeof ExecutionsRouteWithChildren
   '/memory': typeof MemoryRouteWithChildren
+  '/model-test': typeof ModelTestRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
   '/memory/$memoryId': typeof MemoryMemoryIdRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/executions': typeof ExecutionsRouteWithChildren
   '/memory': typeof MemoryRouteWithChildren
+  '/model-test': typeof ModelTestRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
   '/memory/$memoryId': typeof MemoryMemoryIdRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/executions'
     | '/memory'
+    | '/model-test'
     | '/workspaces'
     | '/executions/$executionId'
     | '/memory/$memoryId'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/executions'
     | '/memory'
+    | '/model-test'
     | '/workspaces'
     | '/executions/$executionId'
     | '/memory/$memoryId'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/executions'
     | '/memory'
+    | '/model-test'
     | '/workspaces'
     | '/executions/$executionId'
     | '/memory/$memoryId'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ExecutionsRoute: typeof ExecutionsRouteWithChildren
   MemoryRoute: typeof MemoryRouteWithChildren
+  ModelTestRoute: typeof ModelTestRoute
   WorkspacesRoute: typeof WorkspacesRouteWithChildren
 }
 
@@ -149,6 +162,13 @@ declare module '@tanstack/react-router' {
       path: '/workspaces'
       fullPath: '/workspaces'
       preLoaderRoute: typeof WorkspacesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/model-test': {
+      id: '/model-test'
+      path: '/model-test'
+      fullPath: '/model-test'
+      preLoaderRoute: typeof ModelTestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/memory': {
@@ -253,6 +273,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ExecutionsRoute: ExecutionsRouteWithChildren,
   MemoryRoute: MemoryRouteWithChildren,
+  ModelTestRoute: ModelTestRoute,
   WorkspacesRoute: WorkspacesRouteWithChildren,
 }
 export const routeTree = rootRouteImport

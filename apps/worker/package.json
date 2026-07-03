@@ -9,11 +9,11 @@
     "dist"
   ],
   "scripts": {
-    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsx src/index.ts",
+    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsx src/index.ts",
     "start": "node dist/index.js",
     "health": "pnpm run build && node dist/health.js",
-    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc -b tsconfig.json",
-    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc --noEmit -p tsconfig.json",
+    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint ."
   },
   "dependencies": {
@@ -25,7 +25,8 @@
     "@pap/runtime": "workspace:*",
     "@pap/shared": "workspace:*",
     "@pap/storage": "workspace:*",
-    "@pap/storage-sqlite": "workspace:*"
+    "@pap/storage-sqlite": "workspace:*",
+    "@pap/tools-search-searxng": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.22.4"

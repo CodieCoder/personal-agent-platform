@@ -8,7 +8,7 @@ import {
 import { AIProviderError, isAIProviderError, type AIProvider } from "@pap/ai";
 import type { OllamaConfig } from "./config.js";
 import { createDisabledOllamaProviderHealth } from "./health.js";
-import { OllamaClient, type OllamaFetch } from "./ollama-client.js";
+import { OllamaClient, type OllamaFetch, type OllamaModelTag } from "./ollama-client.js";
 
 export const defaultOllamaProviderId = "provider.ollama" as const;
 
@@ -77,14 +77,15 @@ export class OllamaProvider implements AIProvider {
 
     try {
       const tags = await this.client.listModels({ providerId: this.id });
-      const modelPresent = tags.models.some((model) => model.name === this.config.defaultModel);
+      const matchedModelName = findConfiguredModelName(tags.models, this.config.defaultModel);
+      const modelPresent = matchedModelName !== undefined;
 
       return providerHealthSchema.parse({
         providerId: this.id,
         kind: "ollama",
         status: modelPresent ? "healthy" : "degraded",
         checkedAt,
-        model: this.config.defaultModel,
+        model: matchedModelName ?? this.config.defaultModel,
         message: modelPresent
           ? "Ollama is reachable and the configured model is available."
           : "Ollama is reachable, but the configured model was not found in local tags.",
@@ -184,4 +185,14 @@ export class OllamaProvider implements AIProvider {
       },
     });
   }
+}
+
+function findConfiguredModelName(
+  models: OllamaModelTag[],
+  configuredModel: string,
+): string | undefined {
+  return (
+    models.find((model) => model.name === configuredModel)?.name ??
+    models.find((model) => model.name.toLowerCase() === configuredModel.toLowerCase())?.name
+  );
 }

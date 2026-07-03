@@ -11,7 +11,8 @@
     { "path": "../ai" },
     { "path": "../shared" },
     { "path": "../storage" },
-    { "path": "../memory" }
+    { "path": "../memory" },
+    { "path": "../tools-search" }
   ],
   "include": ["src/**/*.ts"]
 }

@@ -16,6 +16,8 @@
     { "path": "../../packages/contracts" },
     { "path": "../../packages/ai" },
     { "path": "../../packages/ai-ollama" },
+    { "path": "../../packages/tools-search" },
+    { "path": "../../packages/tools-search-searxng" },
     { "path": "../../packages/shared" },
     { "path": "../../packages/storage" },
     { "path": "../../packages/memory" },

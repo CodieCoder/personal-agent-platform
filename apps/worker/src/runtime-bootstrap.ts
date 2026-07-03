@@ -5,6 +5,7 @@ import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
 import {
   createLogger,
+  loadRepositoryEnvironment,
   type PapLogger,
   type ServerEnvironment,
   validateEnvironment,
@@ -23,6 +24,10 @@ import {
   type MigrationResult,
   type SqliteDatabaseConnection,
 } from "@pap/storage-sqlite";
+import {
+  createSearxngSearchProviderRegistry,
+  defaultSearxngProviderId,
+} from "@pap/tools-search-searxng";
 
 export type WorkerRuntimeState = {
   env: Pick<ServerEnvironment, "PAP_ENVIRONMENT">;
@@ -38,7 +43,8 @@ export type WorkerRuntimeState = {
 };
 
 export function createWorkerRuntimeState(): WorkerRuntimeState {
-  const { env, warnings } = validateEnvironment();
+  const runtimeEnv = loadRepositoryEnvironment();
+  const { env, warnings } = validateEnvironment(runtimeEnv);
   const databaseConfig = {
     databaseUrl: env.PAP_DATABASE_URL,
     dataDir: env.PAP_DATA_DIR,
@@ -54,13 +60,16 @@ export function createWorkerRuntimeState(): WorkerRuntimeState {
     executionTraceRepository: traceRepository,
   });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
-  const aiProviderRegistry = createOllamaProviderRegistry({ env: process.env });
+  const aiProviderRegistry = createOllamaProviderRegistry({ env: runtimeEnv });
+  const searchProviderRegistry = createSearxngSearchProviderRegistry({ env: runtimeEnv });
   const runtime = createRuntime({
     traceRepository,
     memoryService,
     capabilities: [echoCapability, localModelTestCapability],
     logger,
     aiProviderRegistry,
+    searchProviderRegistry,
+    defaultSearchProviderId: defaultSearxngProviderId,
   });
 
   return {

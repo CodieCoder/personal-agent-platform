@@ -85,12 +85,26 @@ export async function executeLocalModelTest(
 }
 
 function resolveModel(requestedModel: string | null, health: ProviderHealth): string {
+  if (health.status === "disabled") {
+    throwLocalModelTestError({
+      code: "AI_PROVIDER_DISABLED",
+      message: "Local model provider is disabled. Enable Ollama and configure a default model.",
+      category: "llm",
+      retryable: false,
+      details: {
+        providerId: health.providerId,
+        healthStatus: health.status,
+        ...(health.model ? { model: health.model } : {}),
+      },
+    });
+  }
+
   if (health.status !== "healthy" || health.model === undefined) {
     throwLocalModelTestError({
       code: "AI_PROVIDER_UNAVAILABLE",
       message: "Local model provider is not ready. Check Ollama and the configured model.",
       category: "llm",
-      retryable: health.status !== "disabled",
+      retryable: true,
       details: {
         providerId: health.providerId,
         healthStatus: health.status,

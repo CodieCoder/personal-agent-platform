@@ -136,6 +136,26 @@ test("executeLocalModelTest fails safely when provider health is not ready", asy
   assert.equal(context.generationRequests.length, 0);
 });
 
+test("executeLocalModelTest fails safely when provider is disabled", async () => {
+  const context = createDirectContext({
+    health: {
+      providerId: localModelTestProviderId,
+      kind: "ollama",
+      status: "disabled",
+      checkedAt: fixedNow,
+      message: "Ollama provider is disabled by configuration.",
+    },
+  });
+
+  await assert.rejects(
+    () => executeLocalModelTest({ prompt: "Summarize this prompt." }, context),
+    (error) =>
+      error.name === "LocalModelTestSafeError" &&
+      error.platformError.code === "AI_PROVIDER_DISABLED",
+  );
+  assert.equal(context.generationRequests.length, 0);
+});
+
 test("local-model-test runs through RuntimeExecutionService and persists output", async () => {
   const repository = new InMemoryTraceRepository();
   const memoryService = new RecordingMemoryService();

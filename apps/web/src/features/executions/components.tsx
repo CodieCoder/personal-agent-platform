@@ -5,17 +5,28 @@ import type {
   ExecutionTraceSummary,
   ExecutionTrace,
   ExecutionTraceStep,
+  JsonValue,
+  ProviderHealthStatus,
   TraceStepStatus,
 } from "@pap/contracts";
-import type { RecentExecutionSummary, SafeWebError, WebStatusResult } from "./types";
+import type {
+  ProviderStatusResult,
+  RecentExecutionSummary,
+  SafeWebError,
+  WebStatusResult,
+} from "./types";
 
-export function StatusPill({ status }: { status: ExecutionStatus | TraceStepStatus | "ready" }) {
+type DisplayStatus = ExecutionStatus | TraceStepStatus | ProviderHealthStatus | "ready" | "error";
+
+export function StatusPill({ status }: { status: DisplayStatus }) {
   const className =
-    status === "completed" || status === "ready"
+    status === "completed" || status === "ready" || status === "healthy"
       ? "pill pill-success"
-      : status === "failed"
-        ? "pill pill-error"
-        : "pill pill-neutral";
+      : status === "degraded" || status === "unknown"
+        ? "pill pill-warning"
+        : status === "failed" || status === "unavailable" || status === "error"
+          ? "pill pill-error"
+          : "pill pill-neutral";
 
   return <span className={className}>{status}</span>;
 }
@@ -42,6 +53,56 @@ export function ServerStatus({ status }: { status: WebStatusResult }) {
       </DataRow>
       <DataRow label="Warnings">
         <span>{status.warningCount}</span>
+      </DataRow>
+      <DataRow label="Provider">
+        <span className="provider-status-inline">
+          <StatusPill status={status.provider.status} />
+          <span className="code-value">{status.provider.providerId}</span>
+        </span>
+      </DataRow>
+      <DataRow label="Model">
+        <span>
+          {status.provider.ok && status.provider.model ? status.provider.model : "Not configured"}
+        </span>
+      </DataRow>
+      <DataRow label="Provider readiness">
+        <ProviderReadinessText provider={status.provider} />
+      </DataRow>
+    </div>
+  );
+}
+
+export function ProviderHealthPanel({ provider }: { provider: ProviderStatusResult }) {
+  return (
+    <div className="status-grid">
+      <DataRow label="Provider">
+        <span className="provider-status-inline">
+          <StatusPill status={provider.status} />
+          <span className="code-value">{provider.providerId}</span>
+        </span>
+      </DataRow>
+      {provider.ok ? (
+        <>
+          <DataRow label="Kind">
+            <span>{provider.kind}</span>
+          </DataRow>
+          <DataRow label="Configured model">
+            <span>{provider.model ?? "Not configured"}</span>
+          </DataRow>
+          <DataRow label="Last checked">
+            <span>{formatTimestamp(provider.checkedAt)}</span>
+          </DataRow>
+          <DataRow label="Provider message">
+            <span>{provider.message ?? "No provider message."}</span>
+          </DataRow>
+        </>
+      ) : (
+        <DataRow label="Status detail">
+          <span>{provider.error.message}</span>
+        </DataRow>
+      )}
+      <DataRow label="Action">
+        <ProviderReadinessText provider={provider} />
       </DataRow>
     </div>
   );
@@ -177,6 +238,7 @@ export function TraceSteps({ steps }: { steps: ExecutionTraceStep[] }) {
               {step.errorMessage ? `: ${step.errorMessage}` : ""}
             </p>
           ) : null}
+          {step.metadata ? <TraceMetadata metadata={step.metadata} /> : null}
         </li>
       ))}
     </ol>
@@ -213,3 +275,99 @@ export function formatTimestamp(timestamp: string) {
     timeStyle: "medium",
   }).format(parsed);
 }
+
+function ProviderReadinessText({ provider }: { provider: ProviderStatusResult }) {
+  if (!provider.ok) {
+    return <span>{provider.error.message}</span>;
+  }
+
+  switch (provider.status) {
+    case "healthy":
+      return <span>Ready for local model tests.</span>;
+    case "degraded":
+      return <span>Ollama answered, but PAP could not confirm the configured model.</span>;
+    case "disabled":
+      return <span>Enable Ollama and set OLLAMA_DEFAULT_MODEL on the server.</span>;
+    case "unavailable":
+      return <span>Start Ollama and confirm the configured model is installed.</span>;
+    case "unknown":
+      return <span>Provider readiness has not been confirmed yet.</span>;
+    default:
+      return <span>Provider readiness is not available.</span>;
+  }
+}
+
+function TraceMetadata({ metadata }: { metadata: Record<string, JsonValue> }) {
+  const rows = safeMetadataEntries(metadata);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <dl className="trace-metadata" aria-label="Trace metadata">
+      {rows.map(([key, value]) => (
+        <div className="trace-metadata-row" key={key}>
+          <dt>{metadataLabel(key)}</dt>
+          <dd>{formatMetadataValue(value)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function safeMetadataEntries(metadata: Record<string, JsonValue>): [string, JsonValue][] {
+  return metadataAllowlist.flatMap((key) =>
+    Object.hasOwn(metadata, key) ? [[key, metadata[key] as JsonValue]] : [],
+  );
+}
+
+function formatMetadataValue(value: JsonValue): string {
+  if (value === null) {
+    return "null";
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : value.toFixed(3);
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return "structured value";
+}
+
+function metadataLabel(key: string): string {
+  return key.replace(/[A-Z]/gu, (match) => ` ${match.toLowerCase()}`);
+}
+
+const metadataAllowlist = [
+  "providerId",
+  "providerKind",
+  "healthStatus",
+  "checkedAt",
+  "model",
+  "durationMs",
+  "promptTokenCount",
+  "completionTokenCount",
+  "totalTokenCount",
+  "responseSchemaId",
+  "timeoutMs",
+  "keepAlive",
+  "temperature",
+  "maxTokens",
+  "errorKind",
+  "retryable",
+  "modelPresent",
+  "modelCount",
+  "ollamaVersion",
+  "httpStatus",
+  "requestedModel",
+  "promptTemplateId",
+  "promptLength",
+] as const;

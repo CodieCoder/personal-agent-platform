@@ -12,7 +12,7 @@ export function createDisabledOllamaProviderHealth(
   const health = {
     providerId: input.providerId ?? "provider.ollama",
     kind: "ollama",
-    status: "unavailable",
+    status: "disabled",
     checkedAt: input.checkedAt ?? new Date().toISOString(),
     message: "Ollama provider is disabled by configuration.",
     ...(input.model === undefined ? {} : { model: input.model }),

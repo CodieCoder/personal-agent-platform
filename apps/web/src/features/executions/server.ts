@@ -4,15 +4,20 @@ import {
   executionStatusSchema,
   executionTraceListQuerySchema,
   executionTraceSchema,
+  modelNameSchema,
   platformErrorSchema,
+  providerIdSchema,
   workspaceIdSchema,
   z,
 } from "@pap/contracts";
+import type { ProviderHealth } from "@pap/contracts";
 import { createServerFn } from "@tanstack/react-start";
 import type {
   EchoExecutionResult,
   ExecutionHistoryResult,
   ExecutionTraceResult,
+  LocalModelTestExecutionResult,
+  ProviderStatusResult,
   RecentExecutionsResult,
   RecentExecutionSummary,
   SafeWebError,
@@ -22,6 +27,13 @@ import type {
 const echoFormInputSchema = z
   .object({
     message: z.string().trim().min(1, "Echo message cannot be empty."),
+    workspaceId: workspaceIdSchema.optional(),
+  })
+  .strict();
+
+const localModelTestFormInputSchema = z
+  .object({
+    prompt: z.string().trim().min(1, "Prompt cannot be empty.").max(4_000),
     workspaceId: workspaceIdSchema.optional(),
   })
   .strict();
@@ -57,6 +69,16 @@ const echoOutputSchema = z
   })
   .strict();
 
+const localModelTestOutputSchema = z
+  .object({
+    summary: z.string().trim().min(1).max(600),
+    keyPoints: z.array(z.string().trim().min(1).max(200)).min(1).max(5),
+    confidence: z.number().min(0).max(1),
+    provider: providerIdSchema,
+    model: modelNameSchema,
+  })
+  .strict();
+
 export const getStatus = createServerFn({ method: "GET" }).handler(
   async (): Promise<WebStatusResult> => {
     try {
@@ -69,6 +91,7 @@ export const getStatus = createServerFn({ method: "GET" }).handler(
         runtime: "ready",
         capabilityIds: state.runtime.listCapabilities().map((capability) => capability.id),
         warningCount: state.warnings.length,
+        provider: await getLocalProviderStatus(state.runtime),
       };
     } catch (error) {
       return {
@@ -170,6 +193,26 @@ export const listExecutionHistory = createServerFn({ method: "GET" })
     }
   });
 
+export const getProviderStatus = createServerFn({ method: "GET" }).handler(
+  async (): Promise<ProviderStatusResult> => {
+    try {
+      const { getWebRuntimeState } = await import("./runtime.server");
+      const state = getWebRuntimeState();
+      return getLocalProviderStatus(state.runtime);
+    } catch (error) {
+      return {
+        ok: false,
+        providerId: "provider.ollama",
+        status: "error",
+        error: toSafeWebError(error, {
+          code: "MODEL_PROVIDER_STATUS_UNAVAILABLE",
+          message: "Local model provider status could not be loaded.",
+        }),
+      };
+    }
+  },
+);
+
 export const executeEcho = createServerFn({ method: "POST" })
   .validator((input: unknown) => input)
   .handler(async ({ data }): Promise<EchoExecutionResult> => {
@@ -248,6 +291,93 @@ export const executeEcho = createServerFn({ method: "POST" })
         error: toSafeWebError(error, {
           code: "ECHO_EXECUTION_UNAVAILABLE",
           message: "Echo execution is unavailable.",
+        }),
+      };
+    }
+  });
+
+export const executeLocalModelTest = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }): Promise<LocalModelTestExecutionResult> => {
+    const parsedInput = localModelTestFormInputSchema.safeParse(coerceLocalModelTestInput(data));
+
+    if (!parsedInput.success) {
+      return {
+        ok: false,
+        error: {
+          code: "LOCAL_MODEL_TEST_INPUT_INVALID",
+          message: "Enter a prompt before running the local model test.",
+        },
+      };
+    }
+
+    try {
+      const { getWebRuntimeState } = await import("./runtime.server");
+      const state = getWebRuntimeState();
+      const result = await state.runtime.execute({
+        capabilityId: "capability.local-model-test",
+        input: {
+          prompt: parsedInput.data.prompt,
+          ...(parsedInput.data.workspaceId ? { workspaceId: parsedInput.data.workspaceId } : {}),
+        },
+        ...(parsedInput.data.workspaceId ? { workspaceId: parsedInput.data.workspaceId } : {}),
+        source: "web",
+        requestedUi: false,
+        context: {
+          initiatedBy: "user",
+        },
+      });
+
+      if (result.status !== "completed") {
+        return {
+          ok: false,
+          executionId: result.executionId,
+          traceId: result.traceId,
+          status: result.status,
+          error: result.error
+            ? {
+                code: result.error.code,
+                message: result.error.message,
+              }
+            : {
+                code: "LOCAL_MODEL_TEST_EXECUTION_FAILED",
+                message: "Local model test failed without a safe error payload.",
+              },
+        };
+      }
+
+      const output = localModelTestOutputSchema.safeParse(result.data);
+
+      if (!output.success) {
+        return {
+          ok: false,
+          executionId: result.executionId,
+          traceId: result.traceId,
+          status: result.status,
+          error: {
+            code: "LOCAL_MODEL_TEST_OUTPUT_INVALID",
+            message: "Local model test returned an invalid result shape.",
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        executionId: result.executionId,
+        traceId: result.traceId,
+        status: "completed",
+        summary: output.data.summary,
+        keyPoints: output.data.keyPoints,
+        confidence: output.data.confidence,
+        provider: output.data.provider,
+        model: output.data.model,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: toSafeWebError(error, {
+          code: "LOCAL_MODEL_TEST_UNAVAILABLE",
+          message: "Local model test execution is unavailable.",
         }),
       };
     }
@@ -333,6 +463,45 @@ function normalizeOptionalFormValue(value: FormDataEntryValue | null): string | 
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+async function getLocalProviderStatus(runtime: {
+  getProviderHealth(providerId: string): Promise<ProviderHealth>;
+}): Promise<ProviderStatusResult> {
+  try {
+    const health = await runtime.getProviderHealth("provider.ollama");
+
+    return {
+      ok: true,
+      providerId: health.providerId,
+      kind: health.kind,
+      status: health.status,
+      checkedAt: health.checkedAt,
+      ...(health.model ? { model: health.model } : {}),
+      ...(health.message ? { message: health.message } : {}),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      providerId: "provider.ollama",
+      status: "error",
+      error: toSafeWebError(error, {
+        code: "MODEL_PROVIDER_HEALTH_UNAVAILABLE",
+        message: "Local model provider health could not be checked.",
+      }),
+    };
+  }
+}
+
+function coerceLocalModelTestInput(input: unknown): unknown {
+  if (typeof FormData !== "undefined" && input instanceof FormData) {
+    return {
+      prompt: String(input.get("prompt") ?? ""),
+      workspaceId: normalizeOptionalFormValue(input.get("workspaceId")),
+    };
+  }
+
+  return input;
 }
 
 function parseRuntimePlatformError(error: unknown): SafeWebError | null {

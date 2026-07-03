@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && vite dev",
-    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && vite build",
+    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && vite dev",
+    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && vite build",
     "start": "node server.mjs",
-    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc --noEmit -p tsconfig.json",
+    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint ."
   },
   "dependencies": {
@@ -20,6 +20,7 @@
     "@pap/shared": "workspace:*",
     "@pap/storage": "workspace:*",
     "@pap/storage-sqlite": "workspace:*",
+    "@pap/tools-search-searxng": "workspace:*",
     "@tanstack/react-router": "1.170.16",
     "@tanstack/react-start": "1.168.26",
     "react": "19.2.7",

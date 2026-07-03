@@ -21,6 +21,9 @@ function ExecutionDetailRoute() {
         <Link className="text-link" to="/">
           Back to echo
         </Link>
+        <Link className="text-link" to="/model-test">
+          Back to model test
+        </Link>
       </div>
 
       {!result.ok ? <SafeError error={result.error} /> : null}
