@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
 import { echoCapability } from "@pap/capability-echo";
 import { z } from "@pap/contracts";
 import { createRuntime } from "@pap/runtime";
 import { createExecutionId, createTraceStepId, nowIso } from "@pap/shared";
 import { createTemporarySqliteDatabase } from "@pap/testing";
+import { test } from "vitest";
 import {
   createSqliteDatabase,
   runMigrations,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
   SqliteSemanticMemoryRepository,
+  SqliteSourceProfileRepository,
+  SqliteWebEvidenceRepository,
   SqliteWorkspaceRepository,
 } from "../dist/index.js";
 
@@ -80,6 +82,249 @@ test("SqliteWorkspaceRepository creates, gets, lists, updates, and archives work
       "workspace_beta",
     ]);
     assert.equal((await workspaceRepository.getById("workspace_alpha"))?.name, "Alpha Updated");
+  } finally {
+    close();
+  }
+});
+
+test("SqliteSourceProfileRepository creates, matches, updates, lists, and archives profiles", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-source-profile-");
+  const { sourceProfileRepository, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    const news = await sourceProfileRepository.create({
+      id: "source_profile_news",
+      domain: "News.Example.COM.",
+      name: "  News Example  ",
+      articleContainerSelector: "main.article",
+      contentSelector: ".body",
+      titleSelector: "h1",
+      createdAt: "2026-07-03T09:00:00.000Z",
+    });
+    const blog = await sourceProfileRepository.create({
+      id: "source_profile_blog",
+      domain: "blog.example.com",
+      name: "Blog Example",
+      contentSelector: "article",
+      createdAt: "2026-07-03T10:00:00.000Z",
+    });
+    const updated = await sourceProfileRepository.update({
+      id: news.id,
+      name: "News Example Updated",
+      notes: "Manual selector profile.",
+      updatedAt: "2026-07-03T11:00:00.000Z",
+    });
+    const matched = await sourceProfileRepository.getActiveByDomain("NEWS.EXAMPLE.COM.");
+    const archived = await sourceProfileRepository.archive({
+      id: blog.id,
+      archivedAt: "2026-07-03T12:00:00.000Z",
+    });
+    const active = await sourceProfileRepository.list();
+    const all = await sourceProfileRepository.list({ includeArchived: true });
+
+    assert.equal(news.domain, "news.example.com");
+    assert.equal(news.name, "News Example");
+    assert.equal(updated.notes, "Manual selector profile.");
+    assert.equal(matched?.id, news.id);
+    assert.equal(archived.status, "archived");
+    assert.equal(archived.archivedAt, "2026-07-03T12:00:00.000Z");
+    assert.deepEqual(
+      active.map((profile) => profile.id),
+      [news.id],
+    );
+    assert.deepEqual(all.map((profile) => profile.id).sort(), [blog.id, news.id]);
+
+    await assert.rejects(
+      sourceProfileRepository.create({
+        id: "source_profile_duplicate",
+        domain: "news.example.com",
+        name: "Duplicate",
+        contentSelector: "article",
+      }),
+      /UNIQUE constraint failed/u,
+    );
+  } finally {
+    close();
+  }
+});
+
+test("SqliteWebEvidenceRepository persists bounded execution evidence with workspace isolation", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-web-evidence-");
+  const { traceRepository, webEvidenceRepository, connection, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    await traceRepository.create({
+      id: "exec_web_alpha",
+      capabilityId: "capability.search-extract-test",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-07-03T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_web_beta",
+      capabilityId: "capability.search-extract-test",
+      workspaceId: "workspace_beta",
+      startedAt: "2026-07-03T09:00:00.000Z",
+    });
+
+    const search = await webEvidenceRepository.createSearch({
+      id: "web_search_alpha",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      providerId: "provider.searxng",
+      query: "local agents",
+      request: {
+        query: "local agents",
+        page: null,
+        pageSize: 10,
+        language: null,
+        safesearch: null,
+        categories: null,
+        timeRange: null,
+        providerId: "provider.searxng",
+      },
+      status: "completed",
+      resultCount: 1,
+      results: [searchResultFixture()],
+      warnings: [],
+      startedAt: "2026-07-03T09:00:00.000Z",
+      completedAt: "2026-07-03T09:00:00.100Z",
+      durationMs: 100,
+      createdAt: "2026-07-03T09:00:00.120Z",
+    });
+    const fetch = await webEvidenceRepository.createFetch({
+      id: "web_fetch_alpha",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      searchEvidenceId: search.id,
+      selectedUrlSource: "search_result",
+      selectedResultIndex: 0,
+      requestedUrl: "https://example.com/article",
+      finalUrl: "https://example.com/article",
+      status: "completed",
+      statusCode: 200,
+      contentType: "text/html",
+      contentLength: 1_024,
+      contentBytes: 1_024,
+      bodySha256: "a".repeat(64),
+      redirects: [],
+      warnings: [],
+      startedAt: "2026-07-03T09:00:00.200Z",
+      completedAt: "2026-07-03T09:00:00.350Z",
+      durationMs: 150,
+      createdAt: "2026-07-03T09:00:00.360Z",
+    });
+    const extraction = await webEvidenceRepository.createExtraction({
+      id: "web_extraction_alpha",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      fetchEvidenceId: fetch.id,
+      finalUrl: "https://example.com/article",
+      status: "completed",
+      extractionMethod: "readability",
+      sourceProfileId: null,
+      title: "Local agents",
+      siteName: "Example",
+      canonicalUrl: "https://example.com/article",
+      excerpt: "Readable content.",
+      wordCount: 3,
+      contentTextSnapshot: "Readable content snapshot.",
+      contentTextSha256: "b".repeat(64),
+      contentChars: 26,
+      originalContentChars: 2_048,
+      warnings: [],
+      startedAt: "2026-07-03T09:00:00.400Z",
+      completedAt: "2026-07-03T09:00:00.450Z",
+      durationMs: 50,
+      createdAt: "2026-07-03T09:00:00.460Z",
+    });
+    const failedFetch = await webEvidenceRepository.createFetch({
+      id: "web_fetch_alpha_failed",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      searchEvidenceId: search.id,
+      selectedUrlSource: "search_result",
+      selectedResultIndex: 0,
+      requestedUrl: "https://example.com/article",
+      finalUrl: null,
+      status: "failed",
+      statusCode: null,
+      contentType: null,
+      contentLength: null,
+      contentBytes: null,
+      bodySha256: null,
+      redirects: [],
+      warnings: [],
+      failureCategory: "fetch_url_blocked",
+      failureMessage: "Fetch URL is blocked by URL safety policy.",
+      startedAt: "2026-07-03T09:01:00.000Z",
+      completedAt: "2026-07-03T09:01:00.010Z",
+      durationMs: 10,
+      createdAt: "2026-07-03T09:01:00.020Z",
+    });
+
+    const alpha = await webEvidenceRepository.getByExecution({
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+    });
+    const betaScoped = await webEvidenceRepository.getByExecution({
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_beta",
+    });
+    const fetchColumns = connection.sqlite
+      .prepare("PRAGMA table_info(web_fetch_evidence)")
+      .all()
+      .map((row) => row.name);
+    const extractionColumns = connection.sqlite
+      .prepare("PRAGMA table_info(web_extraction_evidence)")
+      .all()
+      .map((row) => row.name);
+    const serialized = JSON.stringify(alpha);
+
+    assert.equal(search.expiresAt, "2026-08-02T09:00:00.120Z");
+    assert.equal(fetch.bodySha256, "a".repeat(64));
+    assert.equal(extraction.contentTextSnapshot, "Readable content snapshot.");
+    assert.equal(failedFetch.failureCategory, "fetch_url_blocked");
+    assert.deepEqual(
+      alpha.fetches.map((evidence) => evidence.id),
+      ["web_fetch_alpha", "web_fetch_alpha_failed"],
+    );
+    assert.deepEqual(betaScoped, { searches: [], fetches: [], extractions: [] });
+    assert.equal(serialized.includes("<html"), false);
+    assert.equal(serialized.toLowerCase().includes("authorization"), false);
+    assert.equal(serialized.toLowerCase().includes("cookie"), false);
+    assert.equal(fetchColumns.includes("html"), false);
+    assert.equal(fetchColumns.includes("headers_json"), false);
+    assert.equal(extractionColumns.includes("content_html"), false);
+
+    await assert.rejects(
+      webEvidenceRepository.createSearch({
+        executionId: "exec_web_alpha",
+        workspaceId: "workspace_beta",
+        providerId: "provider.searxng",
+        query: "wrong workspace",
+        request: {
+          query: "wrong workspace",
+          page: null,
+          pageSize: 10,
+          language: null,
+          safesearch: null,
+          categories: null,
+          timeRange: null,
+          providerId: "provider.searxng",
+        },
+        status: "completed",
+        resultCount: 0,
+        results: [],
+        startedAt: "2026-07-03T09:02:00.000Z",
+        completedAt: "2026-07-03T09:02:00.010Z",
+        durationMs: 10,
+      }),
+      /workspace mismatch/u,
+    );
   } finally {
     close();
   }
@@ -906,11 +1151,27 @@ function createMigratedRepositories(databaseUrl) {
   const connection = createSqliteDatabase({ databaseUrl });
 
   return {
+    connection,
     traceRepository: new SqliteExecutionTraceRepository(connection.db),
     workspaceRepository: new SqliteWorkspaceRepository(connection.db),
     semanticMemoryRepository: new SqliteSemanticMemoryRepository(connection.db),
     episodicMemoryRepository: new SqliteEpisodicMemoryRepository(connection.db),
+    sourceProfileRepository: new SqliteSourceProfileRepository(connection.db),
+    webEvidenceRepository: new SqliteWebEvidenceRepository(connection.db),
     close: connection.close,
+  };
+}
+
+function searchResultFixture() {
+  return {
+    title: "Local agents",
+    url: "https://example.com/article",
+    displayUrl: "example.com",
+    snippet: "A normalized result.",
+    publishedAt: null,
+    engine: "test",
+    category: "general",
+    score: null,
   };
 }
 

@@ -18,12 +18,16 @@
     { "path": "../../packages/ai-ollama" },
     { "path": "../../packages/tools-search" },
     { "path": "../../packages/tools-search-searxng" },
+    { "path": "../../packages/tools-web" },
+    { "path": "../../packages/source-profiles" },
     { "path": "../../packages/shared" },
     { "path": "../../packages/storage" },
     { "path": "../../packages/memory" },
     { "path": "../../packages/storage-sqlite" },
     { "path": "../../packages/runtime" },
-    { "path": "../../packages/capabilities/echo" }
+    { "path": "../../packages/capabilities/echo" },
+    { "path": "../../packages/capabilities/local-model-test" },
+    { "path": "../../packages/capabilities/search-extract-test" }
   ],
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

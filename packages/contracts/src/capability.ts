@@ -18,7 +18,17 @@ import {
   traceStepMetadataSchema,
   traceStepStatusSchema,
 } from "./execution.js";
+import type { ExtractedDocument, ExtractionRequestInput } from "./extraction.js";
 import type { ProviderHealth, ProviderId } from "./provider.js";
+import type {
+  SearchProviderHealth,
+  SearchProviderId,
+  SearchRequestInput,
+  SearchResponse,
+} from "./search.js";
+import type { SourceProfile } from "./source-profile.js";
+import type { FetchRequestInput, FetchResult, FetchUrl } from "./web.js";
+import type { PersistWebEvidenceResult } from "./web-evidence.js";
 
 export const capabilityPermissionSchema = z.enum([
   "profile.read",
@@ -28,6 +38,7 @@ export const capabilityPermissionSchema = z.enum([
   "workspace.write",
   "web.search",
   "web.fetch",
+  "web.evidence.write",
   "file.read",
   "file.write",
   "email.read",
@@ -182,6 +193,50 @@ const providerHealthFunctionSchema = z.custom<(providerId: ProviderId) => Promis
   { message: "Expected a provider health function." },
 );
 
+const resolveSearchProviderFunctionSchema = z.custom<() => Promise<SearchProviderId>>(
+  (value) => typeof value === "function",
+  { message: "Expected a search provider resolver function." },
+);
+
+const searchProviderHealthFunctionSchema = z.custom<
+  (providerId: SearchProviderId) => Promise<SearchProviderHealth>
+>((value) => typeof value === "function", {
+  message: "Expected a search provider health function.",
+});
+
+const searchFunctionSchema = z.custom<(input: SearchRequestInput) => Promise<SearchResponse>>(
+  (value) => typeof value === "function",
+  { message: "Expected a search function." },
+);
+
+const validateUrlPolicyFunctionSchema = z.custom<(url: string) => Promise<FetchUrl>>(
+  (value) => typeof value === "function",
+  { message: "Expected a URL policy validation function." },
+);
+
+const fetchFunctionSchema = z.custom<(input: FetchRequestInput) => Promise<FetchResult>>(
+  (value) => typeof value === "function",
+  { message: "Expected a fetch function." },
+);
+
+const resolveSourceProfileFunctionSchema = z.custom<
+  (url: FetchUrl) => Promise<SourceProfile | null>
+>((value) => typeof value === "function", {
+  message: "Expected a source profile resolver function.",
+});
+
+const extractFunctionSchema = z.custom<
+  (input: ExtractionRequestInput) => Promise<ExtractedDocument>
+>((value) => typeof value === "function", {
+  message: "Expected an extraction function.",
+});
+
+const persistWebEvidenceFunctionSchema = z.custom<
+  (input: unknown) => Promise<PersistWebEvidenceResult>
+>((value) => typeof value === "function", {
+  message: "Expected a web evidence persistence function.",
+});
+
 const uiBuildFunctionSchema = z.custom<(blocks: unknown[]) => Promise<unknown[]>>(
   (value) => typeof value === "function",
   { message: "Expected a UI build function." },
@@ -215,6 +270,18 @@ export const capabilityExecutionContextSchema = z
       .object({
         generateStructured: unknownFunctionSchema,
         getProviderHealth: providerHealthFunctionSchema,
+      })
+      .strict(),
+    web: z
+      .object({
+        resolveSearchProvider: resolveSearchProviderFunctionSchema,
+        getSearchProviderHealth: searchProviderHealthFunctionSchema,
+        search: searchFunctionSchema,
+        validateUrlPolicy: validateUrlPolicyFunctionSchema,
+        fetch: fetchFunctionSchema,
+        resolveSourceProfile: resolveSourceProfileFunctionSchema,
+        extract: extractFunctionSchema,
+        persistEvidence: persistWebEvidenceFunctionSchema,
       })
       .strict(),
     ui: z

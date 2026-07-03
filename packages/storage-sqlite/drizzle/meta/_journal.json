@@ -36,6 +36,20 @@
       "when": 1783000570734,
       "tag": "0004_lush_magus",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1783068444275,
+      "tag": "0005_dazzling_whiplash",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1783091666000,
+      "tag": "0006_web_evidence",
+      "breakpoints": true
     }
   ]
 }

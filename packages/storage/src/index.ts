@@ -33,6 +33,21 @@ export type {
   UpdateSemanticMemoryInput,
 } from "./interfaces/semantic-memory-repository.js";
 export type {
+  ArchiveSourceProfileInput,
+  CreateSourceProfileInput,
+  ListSourceProfilesInput,
+  SourceProfileRepository,
+  UpdateSourceProfileInput,
+} from "./interfaces/source-profile-repository.js";
+export type {
+  CreateWebExtractionEvidenceInput,
+  CreateWebFetchEvidenceInput,
+  CreateWebSearchEvidenceInput,
+  GetWebEvidenceByExecutionInput,
+  WebEvidenceExecutionLink,
+  WebEvidenceRepository,
+} from "./interfaces/web-evidence-repository.js";
+export type {
   ArchiveWorkspaceInput,
   CreateWorkspaceInput,
   ListWorkspacesInput,

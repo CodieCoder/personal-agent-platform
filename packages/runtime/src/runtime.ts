@@ -1,3 +1,10 @@
+import {
+  type AIProvider,
+  type AIProviderRegistry,
+  createAIProviderRegistry,
+  createStructuredGenerationService,
+  type StructuredGenerationService,
+} from "@pap/ai";
 import type {
   CapabilityDefinition,
   CapabilityExecutionRequest,
@@ -11,16 +18,10 @@ import type {
   SearchRequestInput,
   SearchResponse,
 } from "@pap/contracts";
-import {
-  createAIProviderRegistry,
-  createStructuredGenerationService,
-  type AIProvider,
-  type AIProviderRegistry,
-  type StructuredGenerationService,
-} from "@pap/ai";
 import type { MemoryService } from "@pap/memory";
 import type { PapLogger } from "@pap/shared";
-import type { ExecutionTraceRepository } from "@pap/storage";
+import type { SourceProfileService } from "@pap/source-profiles";
+import type { ExecutionTraceRepository, WebEvidenceRepository } from "@pap/storage";
 import {
   createSearchProviderRegistry,
   createSearchService,
@@ -28,6 +29,7 @@ import {
   type SearchProviderRegistry,
   type SearchService,
 } from "@pap/tools-search";
+import type { GuardedFetchClient, UrlSafetyPolicy } from "@pap/tools-web";
 import { CapabilityRegistry } from "./capability-registry.js";
 import { RuntimeExecutionService } from "./execution-service.js";
 import type { RuntimeClock } from "./trace-writer.js";
@@ -43,6 +45,10 @@ export type CreateRuntimeInput = {
   searchProviderRegistry?: SearchProviderRegistry;
   searchService?: SearchService;
   defaultSearchProviderId?: SearchProviderId;
+  urlSafetyPolicy?: UrlSafetyPolicy;
+  guardedFetchClient?: GuardedFetchClient;
+  sourceProfileService?: SourceProfileService;
+  webEvidenceRepository?: WebEvidenceRepository;
 };
 
 export type Runtime = {
@@ -88,6 +94,14 @@ export function createRuntime(input: CreateRuntimeInput): Runtime {
     traceRepository: input.traceRepository,
     structuredGenerationService,
     aiProviderRegistry,
+    searchService,
+    ...(input.defaultSearchProviderId
+      ? { defaultSearchProviderId: input.defaultSearchProviderId }
+      : {}),
+    ...(input.urlSafetyPolicy ? { urlSafetyPolicy: input.urlSafetyPolicy } : {}),
+    ...(input.guardedFetchClient ? { guardedFetchClient: input.guardedFetchClient } : {}),
+    ...(input.sourceProfileService ? { sourceProfileService: input.sourceProfileService } : {}),
+    ...(input.webEvidenceRepository ? { webEvidenceRepository: input.webEvidenceRepository } : {}),
     ...(input.memoryService ? { memoryService: input.memoryService } : {}),
     ...(input.logger ? { logger: input.logger } : {}),
     ...(input.clock ? { clock: input.clock } : {}),

@@ -12,20 +12,22 @@ import {
   capabilityManifestSchema,
   createEpisodicMemoryRequestSchema,
   createSemanticMemoryRequestSchema,
+  createSourceProfileRequestSchema,
   createWorkspaceRequestSchema,
   episodicMemoryQuerySchema,
   episodicMemoryRecordSchema,
+  executionStatusSchema,
   executionTraceListPageSchema,
   executionTraceListQuerySchema,
-  executionStatusSchema,
+  extractedDocumentSchema,
+  extractionRequestSchema,
   fetchErrorSchema,
   fetchRedirectSchema,
   fetchRequestSchema,
   fetchResultSchema,
   fetchWarningSchema,
+  listSourceProfilesQuerySchema,
   listWorkspacesRequestSchema,
-  semanticMemoryQuerySchema,
-  semanticMemoryRecordSchema,
   parsePlatformError,
   platformErrorSchema,
   providerHealthSchema,
@@ -34,9 +36,17 @@ import {
   searchRequestSchema,
   searchResponseSchema,
   searchResultSchema,
+  semanticMemoryQuerySchema,
+  semanticMemoryRecordSchema,
+  sourceProfileSchema,
   structuredGenerationRequestSchema,
   structuredGenerationResultSchema,
+  updateSourceProfileRequestSchema,
   updateWorkspaceRequestSchema,
+  webEvidenceBundleSchema,
+  webExtractionEvidenceSchema,
+  webFetchEvidenceSchema,
+  webSearchEvidenceSchema,
   workspaceSchema,
 } from "../dist/index.js";
 
@@ -438,6 +448,244 @@ test("fetch result, redirect, warning, metadata, and error contracts validate sa
   );
 });
 
+test("web evidence contracts persist bounded normalized metadata only", () => {
+  const searchEvidence = webSearchEvidenceSchema.parse({
+    id: "web_search_evidence_contract",
+    executionId: "exec_contract_web",
+    workspaceId: "workspace_contract_web",
+    providerId: "provider.searxng",
+    query: "local agents",
+    request: {
+      query: "local agents",
+      page: null,
+      pageSize: 10,
+      language: null,
+      safesearch: null,
+      categories: null,
+      timeRange: null,
+      providerId: "provider.searxng",
+    },
+    status: "completed",
+    resultCount: 1,
+    results: [
+      {
+        title: "Local agents",
+        url: "https://example.com/article",
+        displayUrl: "example.com",
+        snippet: "A normalized result.",
+        publishedAt: null,
+        engine: "test",
+        category: "general",
+        score: null,
+      },
+    ],
+    warnings: [],
+    failureCategory: null,
+    failureMessage: null,
+    startedAt: "2026-07-03T09:00:00.000Z",
+    completedAt: "2026-07-03T09:00:00.125Z",
+    durationMs: 125,
+    createdAt: "2026-07-03T09:00:00.130Z",
+    expiresAt: "2026-08-02T09:00:00.130Z",
+  });
+  const fetchEvidence = webFetchEvidenceSchema.parse({
+    id: "web_fetch_evidence_contract",
+    executionId: searchEvidence.executionId,
+    workspaceId: searchEvidence.workspaceId,
+    searchEvidenceId: searchEvidence.id,
+    selectedUrlSource: "search_result",
+    selectedResultIndex: 0,
+    requestedUrl: "https://example.com/article",
+    finalUrl: "https://example.com/article",
+    status: "completed",
+    statusCode: 200,
+    contentType: "text/html",
+    contentLength: 1_024,
+    contentBytes: 1_024,
+    bodySha256: "a".repeat(64),
+    redirects: [],
+    warnings: [],
+    failureCategory: null,
+    failureMessage: null,
+    startedAt: "2026-07-03T09:00:00.200Z",
+    completedAt: "2026-07-03T09:00:00.300Z",
+    durationMs: 100,
+    createdAt: "2026-07-03T09:00:00.310Z",
+    expiresAt: "2026-08-02T09:00:00.310Z",
+  });
+  const extractionEvidence = webExtractionEvidenceSchema.parse({
+    id: "web_extraction_evidence_contract",
+    executionId: searchEvidence.executionId,
+    workspaceId: searchEvidence.workspaceId,
+    fetchEvidenceId: fetchEvidence.id,
+    finalUrl: "https://example.com/article",
+    status: "completed",
+    extractionMethod: "readability",
+    sourceProfileId: null,
+    title: "Local agents",
+    byline: null,
+    siteName: "Example",
+    publishedAt: null,
+    canonicalUrl: "https://example.com/article",
+    excerpt: "Readable content.",
+    wordCount: 2,
+    contentTextSnapshot: "Readable content.",
+    contentTextSha256: "b".repeat(64),
+    contentChars: 17,
+    originalContentChars: 2_048,
+    warnings: [],
+    failureCategory: null,
+    failureMessage: null,
+    startedAt: "2026-07-03T09:00:00.320Z",
+    completedAt: "2026-07-03T09:00:00.360Z",
+    durationMs: 40,
+    createdAt: "2026-07-03T09:00:00.370Z",
+    expiresAt: "2026-08-02T09:00:00.370Z",
+  });
+  const failedFetch = webFetchEvidenceSchema.parse({
+    ...fetchEvidence,
+    id: "web_fetch_evidence_failed",
+    finalUrl: null,
+    status: "failed",
+    statusCode: null,
+    contentType: null,
+    contentLength: null,
+    contentBytes: null,
+    bodySha256: null,
+    failureCategory: "fetch_url_blocked",
+    failureMessage: "Fetch URL is blocked by URL safety policy.",
+  });
+
+  assert.equal(searchEvidence.results.length, 1);
+  assert.equal(fetchEvidence.bodySha256.length, 64);
+  assert.equal(extractionEvidence.contentTextSnapshot.includes("<html"), false);
+  assert.equal(failedFetch.failureCategory, "fetch_url_blocked");
+  assert.equal(
+    webFetchEvidenceSchema.safeParse({ ...fetchEvidence, rawHtml: "<html>unsafe</html>" }).success,
+    false,
+  );
+  assert.equal(
+    webFetchEvidenceSchema.safeParse({ ...fetchEvidence, authorizationHeader: "Bearer token" })
+      .success,
+    false,
+  );
+  assert.deepEqual(
+    webEvidenceBundleSchema
+      .parse({
+        searches: [searchEvidence],
+        fetches: [fetchEvidence, failedFetch],
+        extractions: [extractionEvidence],
+      })
+      .searches.map((evidence) => evidence.id),
+    [searchEvidence.id],
+  );
+});
+
+test("extraction contracts validate bounded normalized documents and methods", () => {
+  const request = extractionRequestSchema.parse({
+    finalUrl: "https://example.com/articles/one",
+    html: "<article>Hello world from a bounded article body.</article>",
+    contentType: "text/html",
+  });
+  const document = extractedDocumentSchema.parse({
+    title: "Example Article",
+    byline: null,
+    siteName: "Example",
+    publishedAt: null,
+    language: "en",
+    canonicalUrl: "https://example.com/articles/one",
+    excerpt: "Hello world",
+    contentText: "Hello world from a bounded article body.",
+    contentHtml: "<article>Hello world from a bounded article body.</article>",
+    wordCount: 7,
+    method: "readability",
+    warnings: [
+      {
+        code: "extraction_metadata_missing",
+        method: "readability",
+        message: "Metadata was incomplete.",
+      },
+    ],
+    metadata: {
+      requestedUrl: null,
+      finalUrl: "https://example.com/articles/one",
+      sourceProfileId: null,
+      contentType: "text/html",
+      contentChars: 40,
+      originalContentChars: 56,
+      maxContentChars: 50_000,
+      extractedAt: "2026-07-03T09:00:00.000Z",
+    },
+  });
+
+  assert.equal(request.html.includes("article"), true);
+  assert.equal(document.method, "readability");
+  assert.equal(extractedDocumentSchema.safeParse({ ...document, method: "llm" }).success, false);
+  assert.equal(
+    extractedDocumentSchema.safeParse({
+      ...document,
+      contentText: "Hello world",
+      wordCount: 7,
+    }).success,
+    false,
+  );
+  assert.equal(
+    extractionRequestSchema.safeParse({
+      finalUrl: "https://example.com/articles/one",
+    }).success,
+    false,
+  );
+});
+
+test("source profile contracts normalize domains and enforce archive rules", () => {
+  const createRequest = createSourceProfileRequestSchema.parse({
+    domain: "News.Example.COM.",
+    name: "Example News",
+    articleContainerSelector: "main.article",
+    contentSelector: "article .body",
+  });
+  const profile = sourceProfileSchema.parse({
+    id: "source_profile_example",
+    domain: createRequest.domain,
+    name: createRequest.name,
+    status: "active",
+    articleContainerSelector: createRequest.articleContainerSelector,
+    titleSelector: null,
+    bylineSelector: null,
+    publishedAtSelector: null,
+    contentSelector: createRequest.contentSelector,
+    canonicalUrlSelector: null,
+    notes: null,
+    createdAt: "2026-07-03T09:00:00.000Z",
+    updatedAt: "2026-07-03T09:00:00.000Z",
+    archivedAt: null,
+  });
+
+  assert.equal(createRequest.domain, "news.example.com");
+  assert.equal(profile.status, "active");
+  assert.equal(
+    sourceProfileSchema.safeParse({
+      ...profile,
+      status: "archived",
+      archivedAt: null,
+    }).success,
+    false,
+  );
+  assert.equal(
+    createSourceProfileRequestSchema.safeParse({ domain: "https://example.com" }).success,
+    false,
+  );
+  assert.equal(
+    updateSourceProfileRequestSchema.safeParse({ id: "source_profile_example" }).success,
+    true,
+  );
+  assert.deepEqual(listSourceProfilesQuerySchema.parse({}), {
+    includeArchived: false,
+    limit: 50,
+    offset: 0,
+  });
+});
+
 test("platformErrorSchema validates typed platform errors", () => {
   const error = parsePlatformError({
     code: "CAPABILITY_NOT_FOUND",
@@ -473,6 +721,13 @@ test("capabilityManifestSchema validates required runtime metadata", () => {
   assert.equal(manifest.skill.entryFile, "SKILL.md");
   assert.deepEqual(manifest.allowedTools, []);
   assert.deepEqual(manifest.permissions, []);
+  assert.equal(
+    capabilityManifestSchema.safeParse({
+      ...manifest,
+      permissions: ["web.search", "web.fetch", "web.evidence.write"],
+    }).success,
+    true,
+  );
   assert.deepEqual(manifest.sideEffects, ["none"]);
   assert.equal(
     capabilityManifestSchema.safeParse({
@@ -628,6 +883,40 @@ test("capabilityExecutionContextSchema validates runtime context shape", () => {
         status: "healthy",
         checkedAt: "2026-07-02T09:00:00.000Z",
       }),
+    },
+    web: {
+      resolveSearchProvider: async () => "provider.searxng",
+      getSearchProviderHealth: async () => ({
+        providerId: "provider.searxng",
+        kind: "searxng",
+        status: "healthy",
+        checkedAt: "2026-07-03T09:00:00.000Z",
+      }),
+      search: async () => ({
+        providerId: "provider.searxng",
+        query: "local agents",
+        page: 1,
+        pageSize: 10,
+        results: [],
+        startedAt: "2026-07-03T09:00:00.000Z",
+        completedAt: "2026-07-03T09:00:00.100Z",
+        durationMs: 100,
+        safety: {
+          safesearch: null,
+          language: null,
+          categories: null,
+          timeRange: null,
+          resultCount: 0,
+          omittedResultCount: 0,
+          normalizedUrlCount: 0,
+        },
+        warnings: [],
+      }),
+      validateUrlPolicy: async (url) => url,
+      fetch: async () => undefined,
+      resolveSourceProfile: async () => null,
+      extract: async () => undefined,
+      persistEvidence: async () => ({ evidenceCount: 0 }),
     },
     ui: {
       build: async (blocks) => blocks,

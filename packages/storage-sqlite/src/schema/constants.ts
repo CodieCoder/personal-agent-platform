@@ -15,6 +15,8 @@ export const traceStepKinds = [
 
 export const workspaceStatuses = ["active", "archived"] as const;
 
+export const sourceProfileStatuses = ["active", "archived"] as const;
+
 export const memoryScopes = ["personal", "workspace", "capability", "thread"] as const;
 
 export const memoryStatuses = [

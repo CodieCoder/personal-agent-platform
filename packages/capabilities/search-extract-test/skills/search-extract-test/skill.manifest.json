@@ -1,0 +1,6 @@
+{
+  "id": "skill.search-extract-test",
+  "version": "0.1.0",
+  "entryFile": "SKILL.md",
+  "description": "Deterministic search and optional guarded extraction test workflow."
+}
