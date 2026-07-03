@@ -1,15 +1,29 @@
 import {
+  isAIProviderError,
+  type AIProviderError,
+  type AIProviderRegistry,
+  type StructuredGenerationService,
+} from "@pap/ai";
+import {
   capabilityExecutionContextSchema,
   capabilityExecutionRequestSchema,
   capabilityExecutionResultSchema,
+  jsonValueSchema,
   type CapabilityDefinition,
   type CapabilityExecutionContext,
   type CapabilityExecutionRequest,
   type CapabilityExecutionResult,
   type CapabilityId,
+  type CapabilityPermission,
   type CapabilityTraceStepInput,
+  type JsonValue,
   type PlatformError,
+  type ProviderHealth,
+  type ProviderId,
+  type StructuredGenerationResult,
+  type TraceStepMetadata,
 } from "@pap/contracts";
+import type { MemoryService } from "@pap/memory";
 import { createExecutionId, type PapLogger } from "@pap/shared";
 import type { ExecutionTraceRepository } from "@pap/storage";
 import type { CapabilityRegistry } from "./capability-registry.js";
@@ -24,19 +38,28 @@ import { type RuntimeClock, TraceWriter } from "./trace-writer.js";
 export type RuntimeExecutionServiceOptions = {
   registry: CapabilityRegistry;
   traceRepository: ExecutionTraceRepository;
+  memoryService?: MemoryService;
   logger?: PapLogger;
   clock?: RuntimeClock;
+  structuredGenerationService?: StructuredGenerationService;
+  aiProviderRegistry?: AIProviderRegistry;
 };
 
 export class RuntimeExecutionService {
   private readonly registry: CapabilityRegistry;
   private readonly traceRepository: ExecutionTraceRepository;
+  private readonly memoryService: MemoryService | undefined;
+  private readonly structuredGenerationService: StructuredGenerationService | undefined;
+  private readonly aiProviderRegistry: AIProviderRegistry | undefined;
   private readonly logger: PapLogger | undefined;
   private readonly clock: RuntimeClock | undefined;
 
   constructor(options: RuntimeExecutionServiceOptions) {
     this.registry = options.registry;
     this.traceRepository = options.traceRepository;
+    this.memoryService = options.memoryService;
+    this.structuredGenerationService = options.structuredGenerationService;
+    this.aiProviderRegistry = options.aiProviderRegistry;
     this.logger = options.logger;
     this.clock = options.clock;
   }
@@ -73,6 +96,14 @@ export class RuntimeExecutionService {
         details: { issues: summarizeValidationIssues(parsedInput.error) },
       }).platformError;
 
+      await trace.addStep({
+        kind: "validation",
+        name: "validate input",
+        status: "failed",
+        summary: "Capability input schema rejected the request.",
+        errorCode: error.code,
+        errorMessage: error.message,
+      });
       await trace.fail(error);
       return this.buildResult({
         executionId,
@@ -81,6 +112,13 @@ export class RuntimeExecutionService {
         error,
       });
     }
+
+    await trace.addStep({
+      kind: "validation",
+      name: "validate input",
+      status: "completed",
+      summary: "Capability input schema accepted the request.",
+    });
 
     try {
       const output = await capability.execute(
@@ -102,6 +140,14 @@ export class RuntimeExecutionService {
           details: { issues: summarizeValidationIssues(parsedOutput.error) },
         }).platformError;
 
+        await trace.addStep({
+          kind: "validation",
+          name: "validate output",
+          status: "failed",
+          summary: "Capability output schema rejected the result.",
+          errorCode: error.code,
+          errorMessage: error.message,
+        });
         await trace.fail(error);
         return this.buildResult({
           executionId,
@@ -111,7 +157,19 @@ export class RuntimeExecutionService {
         });
       }
 
-      await trace.complete();
+      await trace.addStep({
+        kind: "validation",
+        name: "validate output",
+        status: "completed",
+        summary: "Capability output schema accepted the result.",
+      });
+      await trace.addStep({
+        kind: "workflow",
+        name: "finalize execution",
+        status: "completed",
+        summary: "Runtime finalized the execution trace.",
+      });
+      await trace.complete(jsonValueOrUndefined(parsedOutput.data));
       return this.buildResult({
         executionId,
         capabilityId: request.capabilityId,
@@ -184,12 +242,56 @@ export class RuntimeExecutionService {
         execute: async () => unavailableRuntimeFeature("tools"),
       },
       memory: {
-        getMasterProfile: async () => unavailableRuntimeFeature("memory"),
-        search: async () => unavailableRuntimeFeature("memory"),
-        write: async () => unavailableRuntimeFeature("memory"),
+        getMasterProfile: async () =>
+          this.executeMemoryOperation({
+            capability: input.capability,
+            trace: input.trace,
+            permission: "memory.read",
+            name: "memory.getMasterProfile",
+            completedSummary: "Capability read personal semantic memory.",
+            action: (memoryService) => memoryService.getMasterProfile(),
+          }),
+        search: async (searchInput: unknown) =>
+          this.executeMemoryOperation({
+            capability: input.capability,
+            trace: input.trace,
+            permission: "memory.read",
+            name: "memory.search",
+            completedSummary: "Capability searched bounded memory records.",
+            action: (memoryService) => memoryService.search(searchInput),
+          }),
+        write: async (writeInput: unknown) =>
+          this.executeMemoryOperation({
+            capability: input.capability,
+            trace: input.trace,
+            permission: "memory.write",
+            name: "memory.write",
+            completedSummary: "Capability wrote memory through MemoryService.",
+            action: (memoryService) =>
+              memoryService.writeFromCapability(
+                {
+                  executionId: input.executionId,
+                  capabilityId: input.capability.manifest.id,
+                  ...(input.request.workspaceId ? { workspaceId: input.request.workspaceId } : {}),
+                  ...(input.request.threadId ? { threadId: input.request.threadId } : {}),
+                },
+                writeInput,
+              ),
+          }),
       },
       llm: {
-        generateStructured: async () => unavailableRuntimeFeature("llm"),
+        generateStructured: async (llmRequest: unknown) =>
+          this.executeLlmOperation({
+            capability: input.capability,
+            trace: input.trace,
+            request: llmRequest,
+          }),
+        getProviderHealth: async (providerId: ProviderId) =>
+          this.executeProviderHealthOperation({
+            capability: input.capability,
+            trace: input.trace,
+            providerId,
+          }),
       },
       ui: {
         build: async () => unavailableRuntimeFeature("ui"),
@@ -198,6 +300,277 @@ export class RuntimeExecutionService {
         request: async () => unavailableRuntimeFeature("approvals"),
       },
     });
+  }
+
+  private async executeLlmOperation(input: {
+    capability: CapabilityDefinition;
+    trace: TraceWriter;
+    request: unknown;
+  }): Promise<StructuredGenerationResult> {
+    if (!input.capability.manifest.permissions.includes("llm.generate")) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.llmPermissionDenied,
+        message: `Capability ${input.capability.manifest.id} does not have llm.generate.`,
+        category: "permission",
+        details: {
+          capabilityId: input.capability.manifest.id,
+          permission: "llm.generate",
+        },
+      });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "invoke model",
+        status: "failed",
+        summary: "Capability lacks llm.generate.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    if (!this.structuredGenerationService) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.runtimeFeatureUnavailable,
+        message: "Runtime feature is not available in this slice: llm",
+        category: "capability",
+        details: { feature: "llm" },
+      });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "invoke model",
+        status: "failed",
+        summary: "Structured generation service is not configured.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    try {
+      const result = await this.structuredGenerationService.generateStructured(
+        input.request as Parameters<StructuredGenerationService["generateStructured"]>[0],
+      );
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "invoke model",
+        status: "completed",
+        summary: "Structured model generation completed.",
+        metadata: buildLlmSuccessMetadata(result, input.request),
+      });
+      await input.trace.addStep({
+        kind: "validation",
+        name: "validate structured output",
+        status: "completed",
+        summary: "Structured model output matched the requested schema.",
+        metadata: buildStructuredOutputValidationMetadata(result, input.request),
+      });
+
+      return result;
+    } catch (error) {
+      const runtimeError = isAIProviderError(error)
+        ? createRuntimeErrorFromProviderError(error)
+        : createRuntimeSafeError({
+            code: runtimeErrorCodes.aiProviderFailure,
+            message: "Structured model generation failed.",
+            category: "llm",
+            details: { errorName: errorName(error) },
+            cause: error,
+          });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "invoke model",
+        status: "failed",
+        summary: "Structured model generation failed.",
+        errorCode: runtimeError.platformError.code,
+        errorMessage: runtimeError.platformError.message,
+        ...(isAIProviderError(error)
+          ? { metadata: buildLlmErrorMetadata(error, input.request) }
+          : {}),
+      });
+
+      if (isAIProviderError(error) && error.code === "provider_schema_invalid") {
+        await input.trace.addStep({
+          kind: "validation",
+          name: "validate structured output",
+          status: "failed",
+          summary: "Structured model output failed schema validation.",
+          errorCode: runtimeError.platformError.code,
+          errorMessage: runtimeError.platformError.message,
+          metadata: buildStructuredOutputValidationErrorMetadata(error, input.request),
+        });
+      }
+
+      throw runtimeError;
+    }
+  }
+
+  private async executeProviderHealthOperation(input: {
+    capability: CapabilityDefinition;
+    trace: TraceWriter;
+    providerId: ProviderId;
+  }): Promise<ProviderHealth> {
+    if (!input.capability.manifest.permissions.includes("llm.generate")) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.llmPermissionDenied,
+        message: `Capability ${input.capability.manifest.id} does not have llm.generate.`,
+        category: "permission",
+        details: {
+          capabilityId: input.capability.manifest.id,
+          permission: "llm.generate",
+        },
+      });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "failed",
+        summary: "Capability lacks llm.generate.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    if (!this.aiProviderRegistry) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.runtimeFeatureUnavailable,
+        message: "Runtime feature is not available in this slice: llm",
+        category: "capability",
+        details: { feature: "llm" },
+      });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "failed",
+        summary: "AI provider registry is not configured.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    try {
+      const health = await this.aiProviderRegistry.get(input.providerId).health();
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "completed",
+        summary: "Runtime checked model provider health.",
+        metadata: buildProviderHealthMetadata(health),
+      });
+
+      return health;
+    } catch (error) {
+      const runtimeError = isAIProviderError(error)
+        ? createRuntimeErrorFromProviderError(error)
+        : createRuntimeSafeError({
+            code: runtimeErrorCodes.aiProviderFailure,
+            message: "Model provider health check failed.",
+            category: "llm",
+            details: { errorName: errorName(error) },
+            cause: error,
+          });
+
+      await input.trace.addStep({
+        kind: "llm",
+        name: "provider health check",
+        status: "failed",
+        summary: "Model provider health check failed.",
+        errorCode: runtimeError.platformError.code,
+        errorMessage: runtimeError.platformError.message,
+        ...(isAIProviderError(error)
+          ? { metadata: buildProviderHealthErrorMetadata(error, input.providerId) }
+          : {}),
+      });
+
+      throw runtimeError;
+    }
+  }
+
+  private async executeMemoryOperation<T>(input: {
+    capability: CapabilityDefinition;
+    trace: TraceWriter;
+    permission: Extract<CapabilityPermission, "memory.read" | "memory.write">;
+    name: string;
+    completedSummary: string;
+    action: (memoryService: MemoryService) => Promise<T>;
+  }): Promise<T> {
+    if (!input.capability.manifest.permissions.includes(input.permission)) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.memoryPermissionDenied,
+        message: `Capability ${input.capability.manifest.id} does not have ${input.permission}.`,
+        category: "permission",
+        details: {
+          capabilityId: input.capability.manifest.id,
+          permission: input.permission,
+        },
+      });
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "failed",
+        summary: `Capability lacks ${input.permission}.`,
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    if (!this.memoryService) {
+      const error = createRuntimeSafeError({
+        code: runtimeErrorCodes.runtimeFeatureUnavailable,
+        message: "Runtime feature is not available in this slice: memory",
+        category: "capability",
+        details: { feature: "memory" },
+      });
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "failed",
+        summary: "Memory service is not configured.",
+        errorCode: error.platformError.code,
+        errorMessage: error.platformError.message,
+      });
+      throw error;
+    }
+
+    try {
+      const result = await input.action(this.memoryService);
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "completed",
+        summary: input.completedSummary,
+      });
+
+      return result;
+    } catch (error) {
+      const platformError = toPlatformError(error, {
+        code: runtimeErrorCodes.capabilityExecutionFailed,
+        message: "Runtime memory operation failed.",
+        category: "memory",
+      });
+
+      await input.trace.addStep({
+        kind: "memory",
+        name: input.name,
+        status: "failed",
+        summary: "Runtime memory operation failed.",
+        errorCode: platformError.code,
+        errorMessage: platformError.message,
+      });
+
+      throw error;
+    }
   }
 
   private buildResult(input: {
@@ -241,4 +614,201 @@ function unavailableRuntimeFeature(feature: string): never {
     category: "capability",
     details: { feature },
   });
+}
+
+function createRuntimeErrorFromProviderError(error: AIProviderError): RuntimeSafeError {
+  return createRuntimeSafeError({
+    code: runtimeCodeForProviderError(error),
+    message: "Structured model provider failed safely.",
+    category: "llm",
+    retryable: error.retryable,
+    details: {
+      providerErrorKind: error.code,
+      ...(error.providerId ? { providerId: error.providerId } : {}),
+      ...(error.details ? { providerDetails: error.details } : {}),
+    },
+    cause: error,
+  });
+}
+
+function runtimeCodeForProviderError(error: AIProviderError) {
+  switch (error.code) {
+    case "provider_not_found":
+      return runtimeErrorCodes.aiProviderNotFound;
+    case "provider_unavailable":
+      return runtimeErrorCodes.aiProviderUnavailable;
+    case "provider_timeout":
+      return runtimeErrorCodes.aiProviderTimeout;
+    case "provider_overloaded":
+      return runtimeErrorCodes.aiProviderOverloaded;
+    case "provider_http_error":
+      return runtimeErrorCodes.aiProviderHttpError;
+    case "provider_invalid_response":
+      return runtimeErrorCodes.aiProviderInvalidResponse;
+    case "provider_schema_invalid":
+      return runtimeErrorCodes.aiProviderSchemaInvalid;
+    case "provider_disabled":
+      return runtimeErrorCodes.aiProviderDisabled;
+    default:
+      return runtimeErrorCodes.aiProviderFailure;
+  }
+}
+
+function buildLlmSuccessMetadata(
+  result: StructuredGenerationResult,
+  request: unknown,
+): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: result.providerId,
+    model: result.model,
+    responseSchemaId: requestMetadataValue(request, "responseSchema", "id"),
+    timeoutMs: requestMetadataValue(request, "timeoutMs"),
+    keepAlive: requestMetadataValue(request, "keepAlive"),
+    temperature: requestMetadataValue(request, "temperature"),
+    maxTokens: requestMetadataValue(request, "maxTokens"),
+    durationMs: result.durationMs,
+    promptTokenCount: result.promptTokenCount,
+    completionTokenCount: result.completionTokenCount,
+    totalTokenCount: result.totalTokenCount,
+  });
+}
+
+function buildStructuredOutputValidationMetadata(
+  result: StructuredGenerationResult,
+  request: unknown,
+): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: result.providerId,
+    model: result.model,
+    responseSchemaId: requestMetadataValue(request, "responseSchema", "id"),
+  });
+}
+
+function buildStructuredOutputValidationErrorMetadata(
+  error: AIProviderError,
+  request: unknown,
+): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: error.providerId ?? requestMetadataValue(request, "providerId"),
+    model: requestMetadataValue(request, "model"),
+    responseSchemaId:
+      providerDetailMetadataValue(error, "schemaId") ??
+      requestMetadataValue(request, "responseSchema", "id"),
+    errorKind: error.code,
+  });
+}
+
+function buildProviderHealthMetadata(health: ProviderHealth): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: health.providerId,
+    providerKind: health.kind,
+    healthStatus: health.status,
+    checkedAt: health.checkedAt,
+    model: health.model,
+    modelPresent: providerHealthMetadataValue(health, "modelPresent"),
+    modelCount: providerHealthMetadataValue(health, "modelCount"),
+    ollamaVersion: providerHealthMetadataValue(health, "ollamaVersion"),
+    errorKind: providerHealthMetadataValue(health, "errorKind"),
+    retryable: providerHealthMetadataValue(health, "retryable"),
+  });
+}
+
+function buildProviderHealthErrorMetadata(
+  error: AIProviderError,
+  providerId: ProviderId,
+): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: error.providerId ?? providerId,
+    errorKind: error.code,
+    retryable: error.retryable,
+  });
+}
+
+function buildLlmErrorMetadata(error: AIProviderError, request: unknown): TraceStepMetadata {
+  return removeUndefinedValues({
+    providerId: error.providerId ?? requestMetadataValue(request, "providerId"),
+    model: requestMetadataValue(request, "model"),
+    responseSchemaId: requestMetadataValue(request, "responseSchema", "id"),
+    timeoutMs: requestMetadataValue(request, "timeoutMs"),
+    keepAlive: requestMetadataValue(request, "keepAlive"),
+    errorKind: error.code,
+    retryable: error.retryable,
+    httpStatus:
+      typeof error.details?.httpStatus === "number" ? error.details.httpStatus : undefined,
+  });
+}
+
+function requestMetadataValue(
+  request: unknown,
+  key: string,
+  nestedKey?: string,
+): JsonValue | undefined {
+  if (typeof request !== "object" || request === null || !(key in request)) {
+    return undefined;
+  }
+
+  const value = (request as Record<string, unknown>)[key];
+
+  if (nestedKey !== undefined) {
+    if (typeof value !== "object" || value === null || !(nestedKey in value)) {
+      return undefined;
+    }
+
+    return primitiveMetadataValue((value as Record<string, unknown>)[nestedKey]);
+  }
+
+  return primitiveMetadataValue(value);
+}
+
+function providerHealthMetadataValue(health: ProviderHealth, key: string): JsonValue | undefined {
+  if (!health.metadata || !(key in health.metadata)) {
+    return undefined;
+  }
+
+  return primitiveMetadataValue(health.metadata[key]);
+}
+
+function providerDetailMetadataValue(error: AIProviderError, key: string): JsonValue | undefined {
+  if (!error.details || !(key in error.details)) {
+    return undefined;
+  }
+
+  return primitiveMetadataValue(error.details[key]);
+}
+
+function primitiveMetadataValue(value: unknown): JsonValue | undefined {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function removeUndefinedValues(input: Record<string, JsonValue | undefined>): TraceStepMetadata {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  ) as TraceStepMetadata;
+}
+
+function jsonValueOrUndefined(value: unknown): JsonValue | undefined {
+  const parsed = jsonValueSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function errorName(error: unknown): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    typeof error.name === "string"
+  ) {
+    return error.name;
+  }
+
+  return "UnknownError";
 }

@@ -12,7 +12,13 @@ import {
   workspaceIdSchema,
 } from "./common.js";
 import { platformErrorCodeSchema, platformErrorSchema } from "./errors.js";
-import { executionStatusSchema, traceStepKindSchema, traceStepStatusSchema } from "./execution.js";
+import {
+  executionStatusSchema,
+  traceStepKindSchema,
+  traceStepMetadataSchema,
+  traceStepStatusSchema,
+} from "./execution.js";
+import type { ProviderHealth, ProviderId } from "./provider.js";
 
 export const capabilityPermissionSchema = z.enum([
   "profile.read",
@@ -33,6 +39,7 @@ export const capabilityPermissionSchema = z.enum([
   "finance.write",
   "document.read",
   "document.write",
+  "llm.generate",
   "ui.render",
 ]);
 
@@ -136,6 +143,7 @@ export const capabilityTraceStepInputSchema = z
     completedAt: isoDateTimeSchema.optional(),
     errorCode: platformErrorCodeSchema.optional(),
     errorMessage: z.string().min(1).optional(),
+    metadata: traceStepMetadataSchema.optional(),
   })
   .strict();
 
@@ -167,6 +175,11 @@ const toolExecuteFunctionSchema = z.custom<
 const unknownFunctionSchema = z.custom<(input: unknown) => Promise<unknown>>(
   (value) => typeof value === "function",
   { message: "Expected an async function." },
+);
+
+const providerHealthFunctionSchema = z.custom<(providerId: ProviderId) => Promise<ProviderHealth>>(
+  (value) => typeof value === "function",
+  { message: "Expected a provider health function." },
 );
 
 const uiBuildFunctionSchema = z.custom<(blocks: unknown[]) => Promise<unknown[]>>(
@@ -201,6 +214,7 @@ export const capabilityExecutionContextSchema = z
     llm: z
       .object({
         generateStructured: unknownFunctionSchema,
+        getProviderHealth: providerHealthFunctionSchema,
       })
       .strict(),
     ui: z

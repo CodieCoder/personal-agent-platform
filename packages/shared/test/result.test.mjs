@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { err, isErr, isOk, ok, unwrap } from "../dist/index.js";
 
 test("Result helpers represent success and failure outcomes", () => {

@@ -1,5 +1,6 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { workspaceIdSchema } from "@pap/contracts";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import {
   RecentExecutions,
@@ -9,25 +10,46 @@ import {
 } from "../features/executions/components";
 import type { EchoExecutionResult } from "../features/executions/types";
 import { executeEcho, getStatus, listRecentExecutions } from "../features/executions/server";
+import { WorkspaceSelector } from "../features/workspaces/components";
+import { listWorkspaces } from "../features/workspaces/server";
+
+type HomeSearch = {
+  workspaceId?: string | undefined;
+};
 
 export const Route = createFileRoute("/")({
-  component: HomeRoute,
+  validateSearch: (search: Record<string, unknown>): HomeSearch => ({
+    workspaceId: parseWorkspaceId(search.workspaceId),
+  }),
+  loaderDeps: ({ search }) => search,
   loader: async () => {
-    const [status, recent] = await Promise.all([getStatus(), listRecentExecutions()]);
+    const [status, recent, workspaces] = await Promise.all([
+      getStatus(),
+      listRecentExecutions(),
+      listWorkspaces({ data: { includeArchived: true, limit: 100 } }),
+    ]);
 
     return {
       status,
       recent,
+      workspaces,
     };
   },
+  component: HomeRoute,
 });
 
 function HomeRoute() {
   const router = useRouter();
-  const { status, recent } = Route.useLoaderData();
+  const search = Route.useSearch();
+  const { status, recent, workspaces } = Route.useLoaderData();
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<EchoExecutionResult | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   async function submitEcho(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,7 +57,7 @@ function HomeRoute() {
     setResult(null);
 
     try {
-      const nextResult = await executeEcho({ data: { message } });
+      const nextResult = await executeEcho({ data: new FormData(event.currentTarget) });
       setResult(nextResult);
 
       if (nextResult.ok) {
@@ -70,7 +92,28 @@ function HomeRoute() {
             <h2 id="echo-form-title">Run echo</h2>
             <span>server function</span>
           </div>
-          <form className="echo-form" onSubmit={submitEcho}>
+          {workspaces.ok ? (
+            <form action="/" className="filter-bar" method="get">
+              <WorkspaceSelector
+                selectedWorkspaceId={search.workspaceId}
+                restoreFromLocalStorage
+                workspaces={workspaces.workspaces}
+              />
+              <button className="secondary-button" type="submit">
+                Use workspace
+              </button>
+            </form>
+          ) : (
+            <SafeError error={workspaces.error} />
+          )}
+          <form
+            className="echo-form"
+            data-runtime-ready={isHydrated ? "true" : "false"}
+            onSubmit={submitEcho}
+          >
+            {search.workspaceId ? (
+              <input name="workspaceId" type="hidden" value={search.workspaceId} />
+            ) : null}
             <div className="field-grid">
               <label htmlFor="echo-message">Message</label>
               <textarea
@@ -117,7 +160,9 @@ function HomeRoute() {
       <section className="section-panel" aria-labelledby="recent-title">
         <div className="section-heading">
           <h2 id="recent-title">Recent executions</h2>
-          <span>latest 10</span>
+          <Link className="text-link" search={{ page: 1, pageSize: 10 }} to="/executions">
+            View history
+          </Link>
         </div>
         {recent.ok ? (
           <RecentExecutions executions={recent.executions} />
@@ -127,6 +172,15 @@ function HomeRoute() {
       </section>
     </>
   );
+}
+
+function parseWorkspaceId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const parsed = workspaceIdSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function EchoSuccess({ result }: { result: Extract<EchoExecutionResult, { ok: true }> }) {
@@ -140,6 +194,7 @@ function EchoSuccess({ result }: { result: Extract<EchoExecutionResult, { ok: tr
           className="text-link"
           to="/executions/$executionId"
           params={{ executionId: result.executionId }}
+          search={{ page: 1, pageSize: 10 }}
         >
           Open execution detail
         </Link>

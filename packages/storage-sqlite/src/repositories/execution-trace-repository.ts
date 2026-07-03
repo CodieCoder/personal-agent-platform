@@ -1,7 +1,12 @@
 import {
+  executionTraceListPageSchema,
+  executionTraceListQuerySchema,
   executionTraceSchema,
   executionTraceStepSchema,
   type ExecutionId,
+  type ExecutionTraceListPage,
+  type ExecutionTraceListQuery,
+  type ExecutionTraceSummary,
   type ExecutionTrace,
   type ExecutionTraceStep,
 } from "@pap/contracts";
@@ -13,9 +18,10 @@ import type {
   CreateExecutionTraceInput,
   ExecutionTraceRepository,
   FailExecutionTraceInput,
+  ListExecutionTracesPageInput,
   ListRecentExecutionTracesInput,
 } from "@pap/storage";
-import { and, asc, desc, eq, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   executionTraceSteps,
@@ -44,6 +50,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
       completedAt: null,
       errorCode: null,
       errorMessage: null,
+      outputJson: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     });
@@ -67,6 +74,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
       completedAt: input.completedAt,
       errorCode: input.errorCode,
       errorMessage: input.errorMessage,
+      metadataJson: input.metadata ? JSON.stringify(input.metadata) : null,
       createdAt: timestamp,
     });
 
@@ -91,6 +99,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
         completedAt: input.completedAt,
         errorCode: null,
         errorMessage: null,
+        outputJson: input.output === undefined ? null : JSON.stringify(input.output),
         updatedAt: nowIso(),
       })
       .where(eq(executionTraces.id, input.executionId));
@@ -107,6 +116,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
         completedAt: input.completedAt,
         errorCode: input.error.code,
         errorMessage: input.error.message,
+        outputJson: null,
         updatedAt: nowIso(),
       })
       .where(eq(executionTraces.id, input.executionId));
@@ -123,6 +133,7 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
         completedAt: input.completedAt,
         errorCode: "EXECUTION_CANCELLED",
         errorMessage: input.reason ?? "Execution cancelled.",
+        outputJson: null,
         updatedAt: nowIso(),
       })
       .where(eq(executionTraces.id, input.executionId));
@@ -164,12 +175,12 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
             .select()
             .from(executionTraces)
             .where(and(...filters))
-            .orderBy(desc(executionTraces.startedAt))
+            .orderBy(desc(executionTraces.startedAt), desc(executionTraces.id))
             .limit(limit)
         : await this.db
             .select()
             .from(executionTraces)
-            .orderBy(desc(executionTraces.startedAt))
+            .orderBy(desc(executionTraces.startedAt), desc(executionTraces.id))
             .limit(limit);
 
     const traces: ExecutionTrace[] = [];
@@ -181,6 +192,55 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
     return traces;
   }
 
+  async listPage(
+    input: Partial<ListExecutionTracesPageInput> = {},
+  ): Promise<ExecutionTraceListPage> {
+    const query = executionTraceListQuerySchema.parse(input);
+    const filters = buildExecutionTraceFilters(query);
+    const offset = (query.page - 1) * query.pageSize;
+
+    const rows =
+      filters.length > 0
+        ? await this.db
+            .select()
+            .from(executionTraces)
+            .where(and(...filters))
+            .orderBy(desc(executionTraces.startedAt), desc(executionTraces.id))
+            .limit(query.pageSize)
+            .offset(offset)
+        : await this.db
+            .select()
+            .from(executionTraces)
+            .orderBy(desc(executionTraces.startedAt), desc(executionTraces.id))
+            .limit(query.pageSize)
+            .offset(offset);
+
+    const [totalRow] =
+      filters.length > 0
+        ? await this.db
+            .select({ total: count() })
+            .from(executionTraces)
+            .where(and(...filters))
+        : await this.db.select({ total: count() }).from(executionTraces);
+
+    const executions: ExecutionTraceSummary[] = [];
+
+    for (const row of rows) {
+      executions.push(toExecutionTraceSummary(row, (await this.getSteps(row.id)).length));
+    }
+
+    const total = totalRow?.total ?? 0;
+
+    return executionTraceListPageSchema.parse({
+      executions,
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+      hasNextPage: offset + executions.length < total,
+      hasPreviousPage: query.page > 1,
+    });
+  }
+
   private async getSteps(executionId: ExecutionId): Promise<ExecutionTraceStep[]> {
     const rows = await this.db
       .select()
@@ -190,6 +250,32 @@ export class SqliteExecutionTraceRepository implements ExecutionTraceRepository 
 
     return rows.map(toExecutionTraceStep);
   }
+}
+
+function buildExecutionTraceFilters(query: ExecutionTraceListQuery): SQL[] {
+  const filters: SQL[] = [];
+
+  if (query.status) {
+    filters.push(eq(executionTraces.status, query.status));
+  }
+
+  if (query.capabilityId) {
+    filters.push(eq(executionTraces.capabilityId, query.capabilityId));
+  }
+
+  if (query.workspaceId) {
+    filters.push(eq(executionTraces.workspaceId, query.workspaceId));
+  }
+
+  if (query.startedFrom) {
+    filters.push(gte(executionTraces.startedAt, query.startedFrom));
+  }
+
+  if (query.startedTo) {
+    filters.push(lte(executionTraces.startedAt, query.startedTo));
+  }
+
+  return filters;
 }
 
 function normalizeRecentLimit(limit: number | undefined): number {
@@ -211,10 +297,23 @@ function toExecutionTrace(row: ExecutionTraceRow, steps: ExecutionTraceStep[]): 
     completedAt: row.completedAt ?? undefined,
     errorCode: row.errorCode ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
+    output: row.outputJson ? parseJsonValue(row.outputJson) : undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     steps,
   });
+}
+
+function toExecutionTraceSummary(row: ExecutionTraceRow, stepCount: number): ExecutionTraceSummary {
+  return {
+    id: row.id,
+    capabilityId: row.capabilityId,
+    status: row.status,
+    ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
+    startedAt: row.startedAt,
+    ...(row.completedAt ? { completedAt: row.completedAt } : {}),
+    stepCount,
+  };
 }
 
 function toExecutionTraceStep(row: ExecutionTraceStepRow): ExecutionTraceStep {
@@ -230,6 +329,7 @@ function toExecutionTraceStep(row: ExecutionTraceStepRow): ExecutionTraceStep {
     completedAt: row.completedAt ?? undefined,
     errorCode: row.errorCode ?? undefined,
     errorMessage: row.errorMessage ?? undefined,
+    metadata: row.metadataJson ? parseMetadataJson(row.metadataJson) : undefined,
     createdAt: row.createdAt,
   });
 }
@@ -240,4 +340,18 @@ function requireTrace(trace: ExecutionTrace | null, executionId: ExecutionId): E
   }
 
   return trace;
+}
+
+function parseMetadataJson(metadataJson: string): Record<string, unknown> | undefined {
+  const metadata = JSON.parse(metadataJson) as unknown;
+
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
+    return undefined;
+  }
+
+  return metadata as Record<string, unknown>;
+}
+
+function parseJsonValue(json: string): unknown {
+  return JSON.parse(json) as unknown;
 }

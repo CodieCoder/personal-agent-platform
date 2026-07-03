@@ -12,3 +12,18 @@ export const traceStepKinds = [
   "llm",
   "workflow",
 ] as const;
+
+export const workspaceStatuses = ["active", "archived"] as const;
+
+export const memoryScopes = ["personal", "workspace", "capability", "thread"] as const;
+
+export const memoryStatuses = [
+  "active",
+  "proposed",
+  "rejected",
+  "superseded",
+  "expired",
+  "deleted",
+] as const;
+
+export const memorySensitivities = ["low", "moderate", "sensitive"] as const;

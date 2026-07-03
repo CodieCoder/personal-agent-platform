@@ -1,0 +1,31 @@
+{
+  "name": "@pap/memory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @pap/storage build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/storage build && tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint .",
+    "test": "pnpm --filter @pap/storage-sqlite build && pnpm run build && vitest run test/service.test.mjs"
+  },
+  "dependencies": {
+    "@pap/contracts": "workspace:*",
+    "@pap/shared": "workspace:*",
+    "@pap/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@pap/testing": "workspace:*"
+  }
+}

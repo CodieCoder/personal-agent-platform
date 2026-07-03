@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { createExecutionId, createId } from "../dist/index.js";
 
 test("createId produces unique IDs with a stable prefix", () => {

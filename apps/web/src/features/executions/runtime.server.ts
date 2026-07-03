@@ -1,21 +1,37 @@
 import "@tanstack/react-start/server-only";
 
+import { createOllamaProviderRegistry } from "@pap/ai-ollama";
 import { echoCapability } from "@pap/capability-echo";
+import { localModelTestCapability } from "@pap/capability-local-model-test";
+import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
 import {
   createLogger,
   getBrowserSafeEnvironment,
+  loadRepositoryEnvironment,
   type ServerEnvironment,
   validateEnvironment,
 } from "@pap/shared";
-import type { ExecutionTraceRepository } from "@pap/storage";
+import type {
+  EpisodicMemoryRepository,
+  ExecutionTraceRepository,
+  SemanticMemoryRepository,
+  WorkspaceRepository,
+} from "@pap/storage";
 import {
   createSqliteDatabase,
   runMigrations,
+  SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteSemanticMemoryRepository,
+  SqliteWorkspaceRepository,
   type MigrationResult,
   type SqliteDatabaseConnection,
 } from "@pap/storage-sqlite";
+import {
+  createSearxngSearchProviderRegistry,
+  defaultSearxngProviderId,
+} from "@pap/tools-search-searxng";
 
 export type WebRuntimeState = {
   env: Pick<ServerEnvironment, "PAP_ENVIRONMENT">;
@@ -23,6 +39,10 @@ export type WebRuntimeState = {
   migration: MigrationResult;
   connection: SqliteDatabaseConnection;
   traceRepository: ExecutionTraceRepository;
+  workspaceRepository: WorkspaceRepository;
+  semanticMemoryRepository: SemanticMemoryRepository;
+  episodicMemoryRepository: EpisodicMemoryRepository;
+  memoryService: MemoryService;
   runtime: Runtime;
 };
 
@@ -33,7 +53,8 @@ export function getWebRuntimeState(): WebRuntimeState {
     return runtimeState;
   }
 
-  const { env, warnings } = validateEnvironment();
+  const runtimeEnv = loadRepositoryEnvironment();
+  const { env, warnings } = validateEnvironment(runtimeEnv);
   const databaseConfig = {
     databaseUrl: env.PAP_DATABASE_URL,
     dataDir: env.PAP_DATA_DIR,
@@ -41,11 +62,25 @@ export function getWebRuntimeState(): WebRuntimeState {
   const migration = runMigrations(databaseConfig);
   const connection = createSqliteDatabase(databaseConfig);
   const traceRepository = new SqliteExecutionTraceRepository(connection.db);
+  const workspaceRepository = new SqliteWorkspaceRepository(connection.db);
+  const semanticMemoryRepository = new SqliteSemanticMemoryRepository(connection.db);
+  const episodicMemoryRepository = new SqliteEpisodicMemoryRepository(connection.db);
+  const memoryService = createMemoryService({
+    semanticMemoryRepository,
+    episodicMemoryRepository,
+    executionTraceRepository: traceRepository,
+  });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
+  const aiProviderRegistry = createOllamaProviderRegistry({ env: runtimeEnv });
+  const searchProviderRegistry = createSearxngSearchProviderRegistry({ env: runtimeEnv });
   const runtime = createRuntime({
     traceRepository,
-    capabilities: [echoCapability],
+    memoryService,
+    capabilities: [echoCapability, localModelTestCapability],
     logger,
+    aiProviderRegistry,
+    searchProviderRegistry,
+    defaultSearchProviderId: defaultSearxngProviderId,
   });
 
   runtimeState = {
@@ -54,6 +89,10 @@ export function getWebRuntimeState(): WebRuntimeState {
     migration,
     connection,
     traceRepository,
+    workspaceRepository,
+    semanticMemoryRepository,
+    episodicMemoryRepository,
+    memoryService,
     runtime,
   };
 

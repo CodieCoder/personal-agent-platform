@@ -152,6 +152,7 @@ export const capabilityPermissionSchema = z.enum([
 "finance.write",
 "document.read",
 "document.write",
+"llm.generate",
 "ui.render"
 ]);
 export const sideEffectSchema = z.enum([

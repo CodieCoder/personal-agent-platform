@@ -6,6 +6,13 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
-  "references": [{ "path": "../contracts" }, { "path": "../shared" }, { "path": "../storage" }],
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../ai" },
+    { "path": "../shared" },
+    { "path": "../storage" },
+    { "path": "../memory" },
+    { "path": "../tools-search" }
+  ],
   "include": ["src/**/*.ts"]
 }

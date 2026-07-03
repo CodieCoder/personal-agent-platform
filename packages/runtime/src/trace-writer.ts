@@ -6,6 +6,7 @@ import {
   type ExecutionStatus,
   type ExecutionTrace,
   type ExecutionTraceStep,
+  type JsonValue,
   type PlatformError,
   type ThreadId,
   type WorkspaceId,
@@ -89,18 +90,20 @@ export class TraceWriter {
       ...(completedAt ? { completedAt } : {}),
       ...(stepInput.errorCode ? { errorCode: stepInput.errorCode } : {}),
       ...(stepInput.errorMessage ? { errorMessage: stepInput.errorMessage } : {}),
+      ...(stepInput.metadata ? { metadata: stepInput.metadata } : {}),
     });
 
     return step;
   }
 
-  async complete(): Promise<ExecutionTrace> {
+  async complete(output?: JsonValue): Promise<ExecutionTrace> {
     const executionId = this.requireExecutionId();
     this.assertNotFinalized();
 
     const trace = await this.traceRepository.markCompleted({
       executionId,
       completedAt: nowIso(this.clock),
+      ...(output === undefined ? {} : { output }),
     });
 
     this.terminalStatus = "completed";

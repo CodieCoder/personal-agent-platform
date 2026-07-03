@@ -1,0 +1,54 @@
+x-pap-environment: &pap-environment
+  NODE_ENV: production
+  PAP_ENVIRONMENT: self_hosted
+  PAP_BIND_HOST: 0.0.0.0
+  PAP_PORT: "${PAP_PORT:-3000}"
+  PAP_DATABASE_URL: file:/app/data/pap.db
+  PAP_DATA_DIR: /app/data
+  PAP_LOG_PRETTY: "false"
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    environment:
+      <<: *pap-environment
+    volumes:
+      - pap-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "dist/health.js"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    environment:
+      <<: *pap-environment
+    ports:
+      - "127.0.0.1:${PAP_PORT:-3000}:${PAP_PORT:-3000}"
+    volumes:
+      - pap-data:/app/data
+    depends_on:
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:' + (process.env.PAP_PORT || '3000')).then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  pap-data:
+    name: pap-data
