@@ -5,7 +5,7 @@ Status: Accepted for implementation
 
 ## Summary
 
-Bootstrap `/Users/maac/Documents/n-dev/paOS` as its own isolated repository with only
+Bootstrap `/paOS` as its own isolated repository with only
 root metadata, documentation and agent guidance, workspace tooling, Biome, strict TypeScript,
 and Turbo task wiring.
 
@@ -14,7 +14,7 @@ or CI in this slice.
 
 ## Files To Create Or Change
 
-- Initialize local Git repository at `/Users/maac/Documents/n-dev/paOS/.git`.
+- Initialize local Git repository at `/paOS/.git`.
 - Create root metadata: `package.json`, `pnpm-workspace.yaml`, `turbo.json`,
   `tsconfig.base.json`, `tsconfig.json`, `biome.json`, `.nvmrc`, `.npmrc`,
   `.gitignore`, `.env.example`, and `README.md`.
