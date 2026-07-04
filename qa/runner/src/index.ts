@@ -174,6 +174,7 @@ function startWebServer(input: {
       PAP_DATABASE_URL: input.databaseUrl,
       PAP_DATA_DIR: input.dataDir,
       PAP_LOG_LEVEL: "silent",
+      PAP_SEARCH_TEST_FIXTURES: "true",
     },
   });
 

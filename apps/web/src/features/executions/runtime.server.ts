@@ -3,7 +3,7 @@ import "@tanstack/react-start/server-only";
 import { createOllamaProviderRegistry } from "@pap/ai-ollama";
 import { echoCapability } from "@pap/capability-echo";
 import { localModelTestCapability } from "@pap/capability-local-model-test";
-import { searchExtractTestCapability } from "@pap/capability-search-extract-test";
+import { createSearchExtractTestCapability } from "@pap/capability-search-extract-test";
 import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
 import {
@@ -39,6 +39,12 @@ import {
   defaultSearxngProviderId,
 } from "@pap/tools-search-searxng";
 import { createGuardedFetchClient, createUrlSafetyPolicy } from "@pap/tools-web";
+import {
+  createSearchTestFixtureGuardedFetchClient,
+  createSearchTestFixtureSearchProviderRegistry,
+  createSearchTestFixtureUrlSafetyPolicy,
+  shouldUseSearchTestFixtures,
+} from "../search-test/fixtures.server";
 
 export type WebRuntimeState = {
   env: Pick<ServerEnvironment, "PAP_ENVIRONMENT">;
@@ -83,16 +89,26 @@ export function getWebRuntimeState(): WebRuntimeState {
   });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
   const aiProviderRegistry = createOllamaProviderRegistry({ env: runtimeEnv });
-  const searchProviderRegistry = createSearxngSearchProviderRegistry({ env: runtimeEnv });
-  const urlSafetyPolicy = createUrlSafetyPolicy();
-  const guardedFetchClient = createGuardedFetchClient({ policy: urlSafetyPolicy });
+  const useSearchTestFixtures = shouldUseSearchTestFixtures({
+    environment: env.PAP_ENVIRONMENT,
+    rawEnv: runtimeEnv,
+  });
+  const searchProviderRegistry = useSearchTestFixtures
+    ? createSearchTestFixtureSearchProviderRegistry({ rawEnv: runtimeEnv })
+    : createSearxngSearchProviderRegistry({ env: runtimeEnv });
+  const urlSafetyPolicy = useSearchTestFixtures
+    ? createSearchTestFixtureUrlSafetyPolicy()
+    : createUrlSafetyPolicy();
+  const guardedFetchClient = useSearchTestFixtures
+    ? createSearchTestFixtureGuardedFetchClient({ policy: urlSafetyPolicy })
+    : createGuardedFetchClient({ policy: urlSafetyPolicy });
   const sourceProfileService = createSourceProfileService({
     repository: sourceProfileRepository,
   });
   const runtime = createRuntime({
     traceRepository,
     memoryService,
-    capabilities: [echoCapability, localModelTestCapability, searchExtractTestCapability],
+    capabilities: [echoCapability, localModelTestCapability, createSearchExtractTestCapability()],
     logger,
     aiProviderRegistry,
     searchProviderRegistry,

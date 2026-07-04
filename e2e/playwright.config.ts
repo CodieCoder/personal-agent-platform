@@ -9,6 +9,7 @@ const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
 const baseURL = externalBaseURL ?? `http://127.0.0.1:${port}`;
 const dataDir = mkdtempSync(join(tmpdir(), "pap-e2e-"));
 const generatedDatabaseUrl = `file:${join(dataDir, "pap.db")}`;
+const searchFixtureControlFile = join(dataDir, "search-fixture-control.json");
 const configuredDatabaseUrl = process.env.PAP_E2E_DATABASE_URL;
 const testDatabaseUrl = externalBaseURL
   ? configuredDatabaseUrl
@@ -16,6 +17,7 @@ const testDatabaseUrl = externalBaseURL
 
 if (testDatabaseUrl) {
   process.env.PAP_E2E_DATABASE_URL = testDatabaseUrl;
+  process.env.PAP_SEARCH_TEST_FIXTURE_CONTROL_FILE = searchFixtureControlFile;
   runMigrations({ databaseUrl: testDatabaseUrl });
 }
 
@@ -53,6 +55,8 @@ export default defineConfig({
             PAP_DATA_DIR: dataDir,
             PAP_LOG_LEVEL: "silent",
             OLLAMA_ENABLED: "false",
+            PAP_SEARCH_TEST_FIXTURES: "true",
+            PAP_SEARCH_TEST_FIXTURE_CONTROL_FILE: searchFixtureControlFile,
           },
         },
       }),

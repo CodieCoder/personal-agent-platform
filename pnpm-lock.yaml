@@ -68,6 +68,9 @@ importers:
       '@pap/storage-sqlite':
         specifier: workspace:*
         version: link:../../packages/storage-sqlite
+      '@pap/tools-search':
+        specifier: workspace:*
+        version: link:../../packages/tools-search
       '@pap/tools-search-searxng':
         specifier: workspace:*
         version: link:../../packages/tools-search-searxng
