@@ -8,6 +8,8 @@ export {
 export { type MigrationResult, runMigrations } from "./migrations.js";
 export { SqliteEpisodicMemoryRepository } from "./repositories/episodic-memory-repository.js";
 export { SqliteExecutionTraceRepository } from "./repositories/execution-trace-repository.js";
+export { SqliteResearchReportRepository } from "./repositories/research-report-repository.js";
+export { SqliteResearchSourceRepository } from "./repositories/research-source-repository.js";
 export { SqliteSemanticMemoryRepository } from "./repositories/semantic-memory-repository.js";
 export { SqliteSourceProfileRepository } from "./repositories/source-profile-repository.js";
 export { SqliteWebEvidenceRepository } from "./repositories/web-evidence-repository.js";

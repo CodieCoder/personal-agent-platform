@@ -15,6 +15,7 @@
     { "path": "./packages/tools-search-searxng" },
     { "path": "./packages/tools-web" },
     { "path": "./packages/tools-web-readability" },
+    { "path": "./packages/research" },
     { "path": "./packages/source-profiles" },
     { "path": "./packages/shared" },
     { "path": "./packages/storage" },
@@ -24,6 +25,7 @@
     { "path": "./packages/runtime" },
     { "path": "./packages/capabilities/echo" },
     { "path": "./packages/capabilities/local-model-test" },
+    { "path": "./packages/capabilities/research" },
     { "path": "./packages/capabilities/search-extract-test" }
   ]
 }

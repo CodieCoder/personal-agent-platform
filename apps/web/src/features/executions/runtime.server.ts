@@ -3,6 +3,7 @@ import "@tanstack/react-start/server-only";
 import { createOllamaProviderRegistry } from "@pap/ai-ollama";
 import { echoCapability } from "@pap/capability-echo";
 import { localModelTestCapability } from "@pap/capability-local-model-test";
+import { createResearchCapability } from "@pap/capability-research";
 import { createSearchExtractTestCapability } from "@pap/capability-search-extract-test";
 import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
@@ -17,6 +18,8 @@ import { createSourceProfileService } from "@pap/source-profiles";
 import type {
   EpisodicMemoryRepository,
   ExecutionTraceRepository,
+  ResearchReportRepository,
+  ResearchSourceRepository,
   SemanticMemoryRepository,
   SourceProfileRepository,
   WebEvidenceRepository,
@@ -29,6 +32,8 @@ import {
   type SqliteDatabaseConnection,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteResearchReportRepository,
+  SqliteResearchSourceRepository,
   SqliteSemanticMemoryRepository,
   SqliteSourceProfileRepository,
   SqliteWebEvidenceRepository,
@@ -45,6 +50,10 @@ import {
   createSearchTestFixtureUrlSafetyPolicy,
   shouldUseSearchTestFixtures,
 } from "../search-test/fixtures.server";
+import {
+  createResearchFixtureAIProviderRegistry,
+  shouldUseResearchTestFixtures,
+} from "../research/fixtures.server";
 
 export type WebRuntimeState = {
   env: Pick<ServerEnvironment, "PAP_ENVIRONMENT">;
@@ -57,6 +66,8 @@ export type WebRuntimeState = {
   episodicMemoryRepository: EpisodicMemoryRepository;
   sourceProfileRepository: SourceProfileRepository;
   webEvidenceRepository: WebEvidenceRepository;
+  researchReportRepository: ResearchReportRepository;
+  researchSourceRepository: ResearchSourceRepository;
   memoryService: MemoryService;
   runtime: Runtime;
 };
@@ -82,17 +93,26 @@ export function getWebRuntimeState(): WebRuntimeState {
   const episodicMemoryRepository = new SqliteEpisodicMemoryRepository(connection.db);
   const sourceProfileRepository = new SqliteSourceProfileRepository(connection.db);
   const webEvidenceRepository = new SqliteWebEvidenceRepository(connection.db);
+  const researchReportRepository = new SqliteResearchReportRepository(connection.db);
+  const researchSourceRepository = new SqliteResearchSourceRepository(connection.db);
   const memoryService = createMemoryService({
     semanticMemoryRepository,
     episodicMemoryRepository,
     executionTraceRepository: traceRepository,
   });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
-  const aiProviderRegistry = createOllamaProviderRegistry({ env: runtimeEnv });
-  const useSearchTestFixtures = shouldUseSearchTestFixtures({
+  const useResearchTestFixtures = shouldUseResearchTestFixtures({
     environment: env.PAP_ENVIRONMENT,
     rawEnv: runtimeEnv,
   });
+  const aiProviderRegistry = useResearchTestFixtures
+    ? createResearchFixtureAIProviderRegistry({ rawEnv: runtimeEnv })
+    : createOllamaProviderRegistry({ env: runtimeEnv });
+  const useSearchTestFixtures =
+    shouldUseSearchTestFixtures({
+      environment: env.PAP_ENVIRONMENT,
+      rawEnv: runtimeEnv,
+    }) || useResearchTestFixtures;
   const searchProviderRegistry = useSearchTestFixtures
     ? createSearchTestFixtureSearchProviderRegistry({ rawEnv: runtimeEnv })
     : createSearxngSearchProviderRegistry({ env: runtimeEnv });
@@ -108,7 +128,16 @@ export function getWebRuntimeState(): WebRuntimeState {
   const runtime = createRuntime({
     traceRepository,
     memoryService,
-    capabilities: [echoCapability, localModelTestCapability, createSearchExtractTestCapability()],
+    capabilities: [
+      echoCapability,
+      localModelTestCapability,
+      createResearchCapability({
+        reportRepository: researchReportRepository,
+        sourceRepository: researchSourceRepository,
+        memoryService,
+      }),
+      createSearchExtractTestCapability(),
+    ],
     logger,
     aiProviderRegistry,
     searchProviderRegistry,
@@ -130,6 +159,8 @@ export function getWebRuntimeState(): WebRuntimeState {
     episodicMemoryRepository,
     sourceProfileRepository,
     webEvidenceRepository,
+    researchReportRepository,
+    researchSourceRepository,
     memoryService,
     runtime,
   };

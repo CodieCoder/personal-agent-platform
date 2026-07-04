@@ -6,6 +6,7 @@ export * from "./execution.js";
 export * from "./extraction.js";
 export * from "./memory.js";
 export * from "./provider.js";
+export * from "./research.js";
 export * from "./search.js";
 export * from "./source-profile.js";
 export * from "./web.js";

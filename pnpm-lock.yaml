@@ -35,6 +35,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@pap/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@pap/ai-ollama':
         specifier: workspace:*
         version: link:../../packages/ai-ollama
@@ -44,6 +47,9 @@ importers:
       '@pap/capability-local-model-test':
         specifier: workspace:*
         version: link:../../packages/capabilities/local-model-test
+      '@pap/capability-research':
+        specifier: workspace:*
+        version: link:../../packages/capabilities/research
       '@pap/capability-search-extract-test':
         specifier: workspace:*
         version: link:../../packages/capabilities/search-extract-test
@@ -201,6 +207,34 @@ importers:
         specifier: workspace:*
         version: link:../../runtime
 
+  packages/capabilities/research:
+    dependencies:
+      '@pap/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@pap/memory':
+        specifier: workspace:*
+        version: link:../../memory
+      '@pap/research':
+        specifier: workspace:*
+        version: link:../../research
+      '@pap/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@pap/storage':
+        specifier: workspace:*
+        version: link:../../storage
+    devDependencies:
+      '@pap/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
+      '@pap/storage-sqlite':
+        specifier: workspace:*
+        version: link:../../storage-sqlite
+      '@pap/testing':
+        specifier: workspace:*
+        version: link:../../testing
+
   packages/capabilities/search-extract-test:
     dependencies:
       '@pap/contracts':
@@ -235,6 +269,12 @@ importers:
       '@pap/testing':
         specifier: workspace:*
         version: link:../testing
+
+  packages/research:
+    dependencies:
+      '@pap/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/runtime:
     dependencies:

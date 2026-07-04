@@ -99,7 +99,7 @@ async function main(): Promise<void> {
       config: {
         failFast: true,
         headless: true,
-        timeoutMs: 10_000,
+        timeoutMs: 20_000,
       },
     });
 
@@ -174,6 +174,8 @@ function startWebServer(input: {
       PAP_DATABASE_URL: input.databaseUrl,
       PAP_DATA_DIR: input.dataDir,
       PAP_LOG_LEVEL: "silent",
+      OLLAMA_ENABLED: "false",
+      PAP_RESEARCH_TEST_FIXTURES: "true",
       PAP_SEARCH_TEST_FIXTURES: "true",
     },
   });

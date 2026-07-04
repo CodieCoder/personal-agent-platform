@@ -457,6 +457,26 @@ select:focus-visible {
   text-decoration: underline;
 }
 
+.citation-chip {
+  background: var(--accent-soft);
+  border: 1px solid rgb(13 117 110 / 24%);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  text-decoration: none;
+}
+
+.citation-chip:hover {
+  text-decoration: underline;
+}
+
+.source-url {
+  overflow-wrap: anywhere;
+}
+
 .recent-list,
 .trace-list,
 .entity-list {

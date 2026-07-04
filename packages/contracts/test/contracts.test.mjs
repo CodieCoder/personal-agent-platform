@@ -27,10 +27,22 @@ import {
   fetchResultSchema,
   fetchWarningSchema,
   listSourceProfilesQuerySchema,
+  normalizedResearchCandidateSourceSchema,
   listWorkspacesRequestSchema,
   parsePlatformError,
   platformErrorSchema,
   providerHealthSchema,
+  researchCandidateSourceSchema,
+  researchCandidatePoolSchema,
+  researchCandidateProvenanceSchema,
+  researchErrorSchema,
+  researchQueryPlanSchema,
+  researchReportSchema,
+  researchReportStatusSchema,
+  researchRequestSchema,
+  researchSourceSelectionSchema,
+  researchSourceAnalysisSchema,
+  researchWarningSchema,
   searchProviderErrorSchema,
   searchProviderHealthSchema,
   searchRequestSchema,
@@ -581,6 +593,272 @@ test("web evidence contracts persist bounded normalized metadata only", () => {
   );
 });
 
+test("research contracts validate bounded requests, plans, sources, analyses, and reports", () => {
+  const request = researchRequestSchema.parse({
+    question: "  What changed in local-first agent research this week?  ",
+    workspaceId: "workspace_research",
+    focus: "developer tools",
+    timeRange: "week",
+    maxSources: 5,
+    maxSearchResults: 20,
+    language: "en",
+    categories: ["technology"],
+    memoryProposalMode: "propose",
+  });
+  const warning = researchWarningSchema.parse({
+    code: "source_partially_available",
+    message: "One source exposed only a short excerpt.",
+    details: { retryCount: 1 },
+  });
+  const error = researchErrorSchema.parse({
+    kind: "source_fetch_failed",
+    message: "Source fetch failed safely.",
+    retryable: true,
+    details: { statusCode: 503 },
+  });
+  const plan = researchQueryPlanSchema.parse({
+    id: "research_plan_contract",
+    question: request.question,
+    queries: [
+      {
+        queryId: "research_query_contract",
+        query: request.question,
+        focus: request.focus,
+        timeRange: request.timeRange,
+        language: request.language,
+        categories: request.categories,
+      },
+    ],
+    warnings: [warning],
+    createdAt: "2026-07-04T09:00:00.000Z",
+  });
+  const candidate = researchCandidateSourceSchema.parse({
+    sourceId: "research_source_contract",
+    searchEvidenceId: "web_search_research_contract",
+    searchResultIndex: 0,
+    title: "Local-first agent research",
+    url: "https://example.com/research",
+    displayUrl: "example.com/research",
+    snippet: "A bounded search snippet.",
+    publishedAt: null,
+    engine: "test",
+    category: "technology",
+    providerId: "provider.searxng",
+    providerScore: 0.8,
+    warnings: [],
+  });
+  const analysis = researchSourceAnalysisSchema.parse({
+    sourceId: candidate.sourceId,
+    evidenceId: "web_extraction_research_contract",
+    summary: "The extracted source discusses local-first agent research.",
+    claims: [
+      {
+        claimId: "research_claim_contract",
+        claimText: "Local-first systems keep user data close to the user's environment.",
+        sourceExcerpt: "Local-first systems keep data close to users.",
+        confidence: 0.9,
+      },
+    ],
+    caveats: [],
+    relevanceScore: 0.88,
+    confidence: 0.84,
+    analyzedAt: "2026-07-04T09:01:00.000Z",
+  });
+  const report = researchReportSchema.parse(researchReportFixture({ analysis }));
+
+  assert.equal(request.question, "What changed in local-first agent research this week?");
+  assert.equal(plan.queries[0].query, request.question);
+  assert.equal(candidate.url, "https://example.com/research");
+  assert.equal(analysis.claims.length, 1);
+  assert.equal(report.findings[0].citationIds[0], "research_citation_contract");
+  assert.equal(error.retryable, true);
+  assert.equal(researchReportStatusSchema.safeParse("awaiting_approval").success, false);
+  assert.equal(researchRequestSchema.safeParse({ question: "", maxSources: 16 }).success, false);
+  assert.equal(
+    researchQueryPlanSchema.safeParse({
+      ...plan,
+      queries: Array.from({ length: 9 }, (_, index) => ({
+        ...plan.queries[0],
+        queryId: `research_query_${index}`,
+      })),
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchSourceAnalysisSchema.safeParse({ ...analysis, rawHtml: "<html>unsafe</html>" }).success,
+    false,
+  );
+  assert.equal(
+    researchWarningSchema.safeParse({
+      code: "unsafe_details",
+      message: "Unsafe details.",
+      details: { rawHtml: "<html>unsafe</html>" },
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchErrorSchema.safeParse({
+      kind: "unsafe_details",
+      message: "Unsafe details.",
+      details: { systemPrompt: "hidden prompt" },
+    }).success,
+    false,
+  );
+});
+
+test("research preparation contracts validate normalized candidate pools and source selections", () => {
+  const provenance = researchCandidateProvenanceSchema.parse({
+    queryId: "research_query_contract",
+    query: "local-first agents",
+    searchEvidenceId: "web_search_research_contract",
+    searchResultIndex: 0,
+    providerId: "provider.searxng",
+    engine: "test",
+    category: "technology",
+    score: 0.8,
+    role: "primary",
+  });
+  const candidate = normalizedResearchCandidateSourceSchema.parse({
+    sourceId: "research_source_contract",
+    candidateRank: 1,
+    canonicalUrl: "https://example.com/research",
+    normalizedHostname: "example.com",
+    url: "https://example.com/research?utm_source=newsletter",
+    title: "Local-first agent research",
+    displayUrl: "example.com/research",
+    snippet: "A bounded search snippet.",
+    publishedAt: "2026-07-04T09:00:00.000Z",
+    firstSeenQueryIndex: 0,
+    firstSeenResultIndex: 0,
+    providerId: "provider.searxng",
+    engine: "test",
+    category: "technology",
+    providerScore: 0.8,
+    provenance: [provenance],
+    duplicateCount: 0,
+  });
+  const pool = researchCandidatePoolSchema.parse({
+    queryPlanId: "research_plan_contract",
+    candidates: [candidate],
+    deduplications: [],
+    exclusions: [
+      {
+        queryId: provenance.queryId,
+        searchEvidenceId: provenance.searchEvidenceId,
+        searchResultIndex: 1,
+        urlFingerprint: "a".repeat(16),
+        canonicalUrl: null,
+        reason: "candidate_url_invalid",
+        details: { searchResultIndex: 1 },
+      },
+    ],
+    warnings: [],
+  });
+  const selection = researchSourceSelectionSchema.parse({
+    queryPlanId: pool.queryPlanId,
+    requestedSourceCount: 1,
+    extractionBudget: 1,
+    selected: [
+      {
+        sourceId: candidate.sourceId,
+        candidateRank: candidate.candidateRank,
+        selectionRank: 1,
+        canonicalUrl: candidate.canonicalUrl,
+        normalizedHostname: candidate.normalizedHostname,
+        url: candidate.url,
+        title: candidate.title,
+        publishedAt: candidate.publishedAt,
+        queryId: provenance.queryId,
+        searchEvidenceId: provenance.searchEvidenceId,
+        firstSeenResultIndex: candidate.firstSeenResultIndex,
+        reason: "domain_diversity",
+      },
+    ],
+    exclusions: [
+      {
+        sourceId: "research_source_other",
+        candidateRank: 2,
+        canonicalUrl: "https://other.example/research",
+        normalizedHostname: "other.example",
+        reason: "budget_exhausted",
+      },
+    ],
+    warnings: [],
+  });
+
+  assert.equal(pool.candidates[0].canonicalUrl, "https://example.com/research");
+  assert.equal(selection.selected[0].selectionRank, 1);
+  assert.equal(
+    normalizedResearchCandidateSourceSchema.safeParse({
+      ...candidate,
+      rawProviderPayload: { html: "<html>unsafe</html>" },
+    }).success,
+    false,
+  );
+  assert.equal(
+    normalizedResearchCandidateSourceSchema.safeParse({
+      ...candidate,
+      duplicateCount: 1,
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchSourceSelectionSchema.safeParse({
+      ...selection,
+      selected: [
+        selection.selected[0],
+        { ...selection.selected[0], sourceId: "research_source_duplicate", selectionRank: 2 },
+      ],
+    }).success,
+    false,
+  );
+});
+
+test("research report contracts reject invalid source, evidence, and citation linkages", () => {
+  const report = researchReportFixture();
+
+  assert.equal(researchReportSchema.safeParse(report).success, true);
+  assert.equal(
+    researchReportSchema.safeParse({
+      ...report,
+      citations: [{ ...report.citations[0], sourceId: "research_source_missing" }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchReportSchema.safeParse({
+      ...report,
+      citations: [{ ...report.citations[0], evidenceId: "web_extraction_wrong" }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchReportSchema.safeParse({
+      ...report,
+      findings: [{ ...report.findings[0], citationIds: ["research_citation_missing"] }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchReportSchema.safeParse({
+      ...report,
+      findings: [{ ...report.findings[0], citationIds: [] }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchReportSchema.safeParse({
+      ...report,
+      sources: [{ ...report.sources[0], evidenceId: null }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchReportSchema.safeParse({ ...report, rawModelText: "hidden model output" }).success,
+    false,
+  );
+});
+
 test("extraction contracts validate bounded normalized documents and methods", () => {
   const request = extractionRequestSchema.parse({
     finalUrl: "https://example.com/articles/one",
@@ -1059,6 +1337,89 @@ test("episodic memory contracts validate execution links and JSON-compatible arr
     false,
   );
 });
+
+function researchReportFixture(overrides = {}) {
+  const analysis = overrides.analysis ?? {
+    sourceId: "research_source_contract",
+    evidenceId: "web_extraction_research_contract",
+    summary: "The extracted source discusses local-first agent research.",
+    claims: [
+      {
+        claimId: "research_claim_contract",
+        claimText: "Local-first systems keep user data close to the user's environment.",
+        sourceExcerpt: "Local-first systems keep data close to users.",
+        confidence: 0.9,
+      },
+    ],
+    caveats: [],
+    relevanceScore: 0.88,
+    confidence: 0.84,
+    warnings: [],
+    analyzedAt: "2026-07-04T09:01:00.000Z",
+  };
+
+  return {
+    id: "research_report_contract",
+    executionId: "exec_research_contract",
+    workspaceId: "workspace_research",
+    question: "What changed in local-first agent research this week?",
+    summary: {
+      text: "Local-first agent research continues to emphasize private, user-controlled context.",
+      keyPoints: ["Private context remains a recurring theme."],
+    },
+    findings: [
+      {
+        id: "research_finding_contract",
+        title: "Local-first context remains important",
+        claimText: "Local-first systems keep user data close to the user's environment.",
+        citationIds: ["research_citation_contract"],
+        confidence: 0.86,
+        kind: "sourced_fact",
+      },
+    ],
+    sources: [
+      {
+        id: "research_source_contract",
+        reportId: "research_report_contract",
+        executionId: "exec_research_contract",
+        workspaceId: "workspace_research",
+        evidenceId: "web_extraction_research_contract",
+        url: "https://example.com/research",
+        finalUrl: "https://example.com/research",
+        title: "Local-first agent research",
+        publishedAt: null,
+        selectionRank: 1,
+        relevanceScore: 0.88,
+        analysis,
+        citationIds: ["research_citation_contract"],
+        status: "analyzed",
+        createdAt: "2026-07-04T09:00:00.000Z",
+        updatedAt: "2026-07-04T09:01:00.000Z",
+      },
+    ],
+    citations: [
+      {
+        citationId: "research_citation_contract",
+        sourceId: "research_source_contract",
+        sourceTitle: "Local-first agent research",
+        sourceUrl: "https://example.com/research",
+        evidenceId: "web_extraction_research_contract",
+        claimText: "Local-first systems keep user data close to the user's environment.",
+        sourceExcerpt: "Local-first systems keep data close to users.",
+      },
+    ],
+    limitations: [
+      {
+        code: "limited_source_count",
+        message: "This report uses one source for contract validation.",
+      },
+    ],
+    warnings: [],
+    status: "completed",
+    createdAt: "2026-07-04T09:00:00.000Z",
+    completedAt: "2026-07-04T09:02:00.000Z",
+  };
+}
 
 async function loadFixture(fileName) {
   return JSON.parse(await readFile(join(fixtureDirectory, fileName), "utf8"));

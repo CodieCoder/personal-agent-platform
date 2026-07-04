@@ -47,6 +47,13 @@ function RootComponent() {
             <Link
               activeProps={{ "aria-current": "page" }}
               search={{ page: 1, pageSize: 10 }}
+              to="/research"
+            >
+              Research
+            </Link>
+            <Link
+              activeProps={{ "aria-current": "page" }}
+              search={{ page: 1, pageSize: 10 }}
               to="/executions"
             >
               Executions

@@ -22,6 +22,23 @@ export type {
   ListRecentExecutionTracesInput,
 } from "./interfaces/execution-trace-repository.js";
 export type {
+  CreateResearchReportInput,
+  GetResearchReportByIdInput,
+  ListResearchReportsInput,
+  ReplaceResearchReportContentInput,
+  ResearchReportRepository,
+  UpdateResearchReportStatusInput,
+} from "./interfaces/research-report-repository.js";
+export type {
+  CreateResearchSourceInput,
+  GetResearchSourceByIdInput,
+  ListResearchSourcesByExecutionInput,
+  ListResearchSourcesByReportInput,
+  ResearchSourceRepository,
+  UpdateResearchSourceAnalysisInput,
+  UpdateResearchSourceStatusInput,
+} from "./interfaces/research-source-repository.js";
+export type {
   ApproveSemanticMemoryProposalInput,
   CreateSemanticMemoryInput,
   MarkSemanticMemoryExpiredInput,

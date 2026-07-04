@@ -4,16 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-search-extract-test build && vite dev",
-    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-search-extract-test build && vite build",
+    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-research build && pnpm --filter @pap/capability-search-extract-test build && vite dev",
+    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-research build && pnpm --filter @pap/capability-search-extract-test build && vite build",
     "start": "node server.mjs",
-    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-search-extract-test build && tsc --noEmit -p tsconfig.json",
+    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-research build && pnpm --filter @pap/capability-search-extract-test build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint ."
   },
   "dependencies": {
+    "@pap/ai": "workspace:*",
     "@pap/ai-ollama": "workspace:*",
     "@pap/capability-echo": "workspace:*",
     "@pap/capability-local-model-test": "workspace:*",
+    "@pap/capability-research": "workspace:*",
     "@pap/capability-search-extract-test": "workspace:*",
     "@pap/contracts": "workspace:*",
     "@pap/memory": "workspace:*",
