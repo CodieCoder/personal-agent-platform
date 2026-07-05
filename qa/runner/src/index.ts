@@ -21,18 +21,40 @@ const artifactDirectory = resolve(".qa-results/artifacts");
 const resultsDatabasePath = resolve(".qa-results/results.db");
 const resultDirectory = resolve("qa/results");
 
+type QaProviderMode = "live" | "fixture";
+type QaAppEnvironment = "local" | "test" | "self_hosted" | "production";
+
+type QaRunEnvironment = {
+  providerMode: QaProviderMode;
+  appEnvironment: QaAppEnvironment;
+  baseURL: string;
+  isolatedDatabaseUrl: string;
+  isolatedDataDir: string;
+  stepTimeoutMs: number;
+};
+
 type QaResult = {
   scenario: string;
   status: "passed" | "failed" | "error";
   featurePaths: string[];
   artifactDirectory: string;
   resultsDatabasePath: string;
+  environment?: QaRunEnvironment;
   qaIntel: RunSuiteOutput;
   fixHint?: string;
 };
 
 async function main(): Promise<void> {
-  const featurePaths = await listFeaturePaths();
+  const providerMode = resolveProviderMode(process.env.PAP_QA_PROVIDER_MODE);
+  const appEnvironment = resolveAppEnvironment({
+    rawValue: process.env.PAP_QA_APP_ENVIRONMENT,
+    providerMode,
+  });
+  const stepTimeoutMs = resolveStepTimeoutMs({
+    rawValue: process.env.PAP_QA_TIMEOUT_MS,
+    providerMode,
+  });
+  const featurePaths = await listFeaturePaths(providerMode);
   const compiledContracts = [];
   const compileDiagnostics = [];
 
@@ -81,7 +103,15 @@ async function main(): Promise<void> {
 
   const dataDir = await mkdtemp(join(tmpdir(), "pap-qa-"));
   const databaseUrl = `file:${join(dataDir, "pap.db")}`;
-  const server = startWebServer({ dataDir, databaseUrl });
+  const runEnvironment: QaRunEnvironment = {
+    providerMode,
+    appEnvironment,
+    baseURL,
+    isolatedDatabaseUrl: databaseUrl,
+    isolatedDataDir: dataDir,
+    stepTimeoutMs,
+  };
+  const server = startWebServer({ dataDir, databaseUrl, providerMode, appEnvironment });
 
   try {
     await waitForServer(server);
@@ -99,7 +129,7 @@ async function main(): Promise<void> {
       config: {
         failFast: true,
         headless: true,
-        timeoutMs: 20_000,
+        timeoutMs: stepTimeoutMs,
       },
     });
 
@@ -109,6 +139,7 @@ async function main(): Promise<void> {
       featurePaths,
       artifactDirectory,
       resultsDatabasePath,
+      environment: runEnvironment,
       qaIntel,
       ...(qaIntel.ok && qaIntel.data?.status === "passed"
         ? {}
@@ -140,6 +171,7 @@ async function main(): Promise<void> {
       featurePaths,
       artifactDirectory,
       resultsDatabasePath,
+      environment: runEnvironment,
       qaIntel,
       fixHint: "Run pnpm test:e2e and inspect the execution history or Memory Explorer screens.",
     });
@@ -150,39 +182,116 @@ async function main(): Promise<void> {
   }
 }
 
-async function listFeaturePaths(): Promise<string[]> {
+async function listFeaturePaths(providerMode: QaProviderMode): Promise<string[]> {
   const entries = await readdir(featureDirectory);
 
   return entries
     .filter((entry) => entry.endsWith(".feature"))
+    .filter((entry) => shouldRunFeature({ entry, providerMode }))
     .sort()
     .map((entry) => join(featureDirectory, entry));
+}
+
+function shouldRunFeature(input: { entry: string; providerMode: QaProviderMode }): boolean {
+  if (input.entry.endsWith(".fixture.feature")) {
+    return input.providerMode === "fixture";
+  }
+
+  if (input.entry.endsWith(".live.feature")) {
+    return input.providerMode === "live";
+  }
+
+  return true;
 }
 
 function startWebServer(input: {
   dataDir: string;
   databaseUrl: string;
+  providerMode: QaProviderMode;
+  appEnvironment: QaAppEnvironment;
 }): ChildProcessWithoutNullStreams {
   const server = spawn("pnpm", ["dev:web"], {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      NODE_ENV: "test",
-      PAP_ENVIRONMENT: "test",
+      NODE_ENV: input.providerMode === "fixture" ? "test" : "development",
+      PAP_ENVIRONMENT: input.appEnvironment,
       PAP_BIND_HOST: "127.0.0.1",
       PAP_PORT: String(port),
       PAP_DATABASE_URL: input.databaseUrl,
       PAP_DATA_DIR: input.dataDir,
       PAP_LOG_LEVEL: "silent",
-      OLLAMA_ENABLED: "false",
-      PAP_RESEARCH_TEST_FIXTURES: "true",
-      PAP_SEARCH_TEST_FIXTURES: "true",
+      ...(input.providerMode === "fixture"
+        ? {
+            OLLAMA_ENABLED: "false",
+            PAP_RESEARCH_TEST_FIXTURES: "true",
+            PAP_SEARCH_TEST_FIXTURES: "true",
+          }
+        : {
+            PAP_RESEARCH_TEST_FIXTURES: "false",
+            PAP_SEARCH_TEST_FIXTURES: "false",
+          }),
     },
   });
 
   server.stdout.on("data", consumeServerOutput);
   server.stderr.on("data", consumeServerOutput);
   return server;
+}
+
+function resolveProviderMode(value: string | undefined): QaProviderMode {
+  if (value === undefined || value.trim() === "") {
+    return "live";
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === "live" || normalized === "fixture") {
+    return normalized;
+  }
+
+  throw new Error("PAP_QA_PROVIDER_MODE must be 'live' or 'fixture'.");
+}
+
+function resolveAppEnvironment(input: {
+  rawValue: string | undefined;
+  providerMode: QaProviderMode;
+}): QaAppEnvironment {
+  if (input.rawValue === undefined || input.rawValue.trim() === "") {
+    return input.providerMode === "fixture" ? "test" : "local";
+  }
+
+  const normalized = input.rawValue.trim().toLowerCase();
+
+  if (
+    normalized === "local" ||
+    normalized === "test" ||
+    normalized === "self_hosted" ||
+    normalized === "production"
+  ) {
+    return normalized;
+  }
+
+  throw new Error(
+    "PAP_QA_APP_ENVIRONMENT must be 'local', 'test', 'self_hosted', or 'production'.",
+  );
+}
+
+function resolveStepTimeoutMs(input: {
+  rawValue: string | undefined;
+  providerMode: QaProviderMode;
+}): number {
+  if (input.rawValue === undefined || input.rawValue.trim() === "") {
+    return input.providerMode === "live" ? 180_000 : 20_000;
+  }
+
+  const parsed = Number(input.rawValue);
+
+  if (!Number.isInteger(parsed) || parsed < 1_000 || parsed > 600_000) {
+    throw new Error("PAP_QA_TIMEOUT_MS must be an integer between 1000 and 600000.");
+  }
+
+  return parsed;
 }
 
 async function seedQaFixtures(databaseUrl: string): Promise<void> {

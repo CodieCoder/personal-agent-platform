@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { createAIProviderRegistry } from "@pap/ai";
+import { AIProviderError, createAIProviderRegistry } from "@pap/ai";
 import {
   structuredGenerationResultSchema,
   type AIProviderKind,
@@ -22,11 +22,16 @@ export function shouldUseResearchTestFixtures(input: {
 export function createResearchFixtureAIProviderRegistry(input: {
   rawEnv: Record<string, string | undefined>;
 }) {
+  const state = {
+    invalidAnalysisFailures: 0,
+  };
+
   return createAIProviderRegistry([
     {
       id: "provider.ollama",
       health: async () => fixtureHealth(input.rawEnv),
-      generateStructured: async (request) => fixtureStructuredGeneration(request, input.rawEnv),
+      generateStructured: async (request) =>
+        fixtureStructuredGeneration(request, input.rawEnv, state),
     },
   ]);
 }
@@ -56,11 +61,12 @@ function fixtureHealth(rawEnv: Record<string, string | undefined>): ProviderHeal
 function fixtureStructuredGeneration(
   request: StructuredGenerationRequest,
   rawEnv: Record<string, string | undefined>,
+  state: { invalidAnalysisFailures: number },
 ): StructuredGenerationResult {
   const output =
     request.responseSchema.id === "research.source-ranking.v1"
       ? fixtureRankingOutput(request)
-      : fixtureAnalysisOutput(request, rawEnv);
+      : fixtureAnalysisOutput(request, rawEnv, state);
 
   return structuredGenerationResultSchema.parse({
     providerId: request.providerId,
@@ -94,6 +100,7 @@ function fixtureRankingOutput(request: StructuredGenerationRequest) {
 function fixtureAnalysisOutput(
   request: StructuredGenerationRequest,
   rawEnv: Record<string, string | undefined>,
+  state: { invalidAnalysisFailures: number },
 ) {
   const parsed = parsePrompt(request.prompt);
   const source =
@@ -102,6 +109,25 @@ function fixtureAnalysisOutput(
       : {};
   const sourceId = String(source.sourceId ?? "research_source_fixture");
   const mode = rawEnv.PAP_RESEARCH_TEST_FIXTURE_AI_MODE ?? "success";
+
+  if (mode === "analysis_invalid_once" && state.invalidAnalysisFailures === 0) {
+    state.invalidAnalysisFailures += 1;
+    throw new AIProviderError({
+      code: "provider_invalid_response",
+      providerId: request.providerId,
+      message: "Fixture analysis returned malformed JSON once.",
+      details: { schemaId: request.responseSchema.id },
+    });
+  }
+
+  if (mode === "analysis_invalid_always") {
+    throw new AIProviderError({
+      code: "provider_invalid_response",
+      providerId: request.providerId,
+      message: "Fixture analysis returned malformed JSON.",
+      details: { schemaId: request.responseSchema.id },
+    });
+  }
 
   if (mode === "citation_failure") {
     return {

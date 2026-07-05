@@ -124,19 +124,14 @@ function extractFromHtml(
   const article = reader.parse();
 
   if (article === null) {
-    throw new ArticleExtractionError({
-      code: "extraction_readability_failed",
-      method: "readability",
-      url: request.finalUrl,
-      warnings: [
-        ...cleanupWarnings,
-        {
-          code: "extraction_readability_failed",
-          method: "readability",
-          message: "Readability did not return an article candidate.",
-        },
-      ],
-      message: "Readability did not return an article candidate.",
+    return extractHtmlPlainTextFallback({
+      request,
+      document,
+      metadata,
+      options,
+      clock,
+      warnings: cleanupWarnings,
+      reason: "Readability did not return an article candidate.",
     });
   }
 
@@ -160,21 +155,15 @@ function extractFromHtml(
   ];
 
   if (wordCount < options.readabilityMinWordCount) {
-    throw new ArticleExtractionError({
-      code: contentText.length === 0 ? "extraction_empty_content" : "extraction_content_too_short",
-      method: "readability",
-      url: request.finalUrl,
-      warnings: [
-        ...warnings,
-        {
-          code: "extraction_low_quality",
-          method: "readability",
-          message: "Readability extracted too little usable article text.",
-          count: wordCount,
-        },
-      ],
-      message: "Readability extracted too little usable article text.",
-      details: { wordCount, minWordCount: options.readabilityMinWordCount },
+    return extractHtmlPlainTextFallback({
+      request,
+      document,
+      metadata,
+      options,
+      clock,
+      warnings,
+      reason: "Readability extracted too little usable article text.",
+      readabilityWordCount: wordCount,
     });
   }
 
@@ -200,6 +189,92 @@ function extractFromHtml(
       originalContentChars: request.html?.length ?? 0,
       maxContentChars: options.maxContentChars,
       extractedAt: clock().toISOString(),
+    },
+  });
+}
+
+function extractHtmlPlainTextFallback(input: {
+  request: ExtractionRequest;
+  document: Document;
+  metadata: ArticleMetadata;
+  options: ResolvedExtractionOptions;
+  clock: () => Date;
+  warnings: ExtractionWarning[];
+  reason: string;
+  readabilityWordCount?: number;
+}): ExtractedDocument {
+  const normalized = normalizeTextContent(
+    input.document.body?.textContent ?? "",
+    input.options.maxContentChars,
+  );
+  const wordCount = countWords(normalized.text);
+  const warnings: ExtractionWarning[] = [
+    ...input.warnings,
+    {
+      code: "extraction_plain_text_fallback",
+      method: "plain_text",
+      message:
+        "Extraction used sanitized visible page text after Readability could not produce usable article text.",
+    },
+  ];
+
+  if (normalized.truncated) {
+    warnings.push({
+      code: "extraction_content_truncated",
+      method: "plain_text",
+      message: "Plain text extraction exceeded configured bounds and was truncated.",
+      count: normalized.originalLength,
+    });
+  }
+
+  if (wordCount < input.options.plainTextMinWordCount) {
+    throw new ArticleExtractionError({
+      code:
+        normalized.text.length === 0 ? "extraction_empty_content" : "extraction_content_too_short",
+      method: "plain_text",
+      url: input.request.finalUrl,
+      warnings: [
+        ...warnings,
+        {
+          code: "extraction_low_quality",
+          method: "plain_text",
+          message: "Plain text fallback produced too little usable text.",
+          count: wordCount,
+        },
+      ],
+      message: input.reason,
+      details: {
+        wordCount,
+        minWordCount: input.options.plainTextMinWordCount,
+        ...(input.readabilityWordCount === undefined
+          ? {}
+          : { readabilityWordCount: input.readabilityWordCount }),
+      },
+    });
+  }
+
+  return parseExtractedDocument({
+    title: input.metadata.title,
+    byline: input.metadata.byline,
+    siteName: input.metadata.siteName,
+    publishedAt: input.metadata.publishedAt,
+    language: input.metadata.language,
+    canonicalUrl: input.metadata.canonicalUrl,
+    excerpt: input.metadata.excerpt ?? (normalized.text.slice(0, 280) || null),
+    contentText: normalized.text,
+    contentHtml: null,
+    wordCount,
+    method: "plain_text",
+    warnings,
+    metadata: {
+      requestedUrl: input.request.requestedUrl,
+      finalUrl: input.request.finalUrl,
+      sourceProfileId: input.request.sourceProfileId,
+      contentType: input.request.contentType,
+      contentChars: normalized.text.length,
+      originalContentChars: input.request.html?.length ?? 0,
+      maxContentChars: input.options.maxContentChars,
+      extractedAt: input.clock().toISOString(),
     },
   });
 }

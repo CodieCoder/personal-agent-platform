@@ -192,6 +192,75 @@ test("research operation fails safely when analysis cannot produce citation-read
   }
 });
 
+test("research operation retries invalid structured source analysis once", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-research-analysis-retry-", {
+    PAP_RESEARCH_TEST_FIXTURE_AI_MODE: "analysis_invalid_once",
+  });
+
+  try {
+    const result = await runResearchOperation(fixture.state, researchRequest());
+    const report = await getReportOrThrow(fixture, result);
+    const trace = await fixture.traceRepository.getById(
+      result.ok ? result.executionId : "exec_missing",
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.ok && result.status, "completed");
+    assert.equal(report.status, "completed");
+    assert.equal(report.findings.length > 0, true);
+    assert.equal(
+      trace.steps.some(
+        (step) => step.name === "retry source analysis" && step.status === "completed",
+      ),
+      true,
+    );
+    assert.equal(
+      trace.steps.some(
+        (step) => step.name === "invoke model" && step.errorCode === "AI_PROVIDER_INVALID_RESPONSE",
+      ),
+      true,
+    );
+    await assertNoMemoryWrites(fixture);
+  } finally {
+    fixture.close();
+  }
+});
+
+test("research operation uses extracted-text fallback when structured source analysis stays invalid", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-research-analysis-fallback-", {
+    PAP_RESEARCH_TEST_FIXTURE_AI_MODE: "analysis_invalid_always",
+  });
+
+  try {
+    const result = await runResearchOperation(fixture.state, researchRequest());
+    const report = await getReportOrThrow(fixture, result);
+    const trace = await fixture.traceRepository.getById(
+      result.ok ? result.executionId : "exec_missing",
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.ok && result.status, "completed_with_warnings");
+    assert.equal(report.status, "completed_with_warnings");
+    assert.equal(report.findings.length > 0, true);
+    assert.equal(report.citations.length > 0, true);
+    assert.equal(report.sources[0].status, "analyzed");
+    assert.equal(report.sources[0].analysis?.claims.length, 1);
+    assert.equal(
+      report.warnings.some((warning) => warning.code === "source_analysis_fallback_used"),
+      true,
+    );
+    assert.equal(
+      trace.steps.some(
+        (step) => step.name === "fallback source analysis" && step.status === "completed",
+      ),
+      true,
+    );
+    await assertNoMemoryWrites(fixture);
+  } finally {
+    fixture.close();
+  }
+});
+
 test("research reports are persisted with exact workspace isolation", async () => {
   const fixture = await createResearchOperationFixture("pap-web-research-workspaces-");
 

@@ -8,6 +8,7 @@ import {
   type ProviderHealth,
   type ResearchReport,
   type ResearchRequest,
+  type ResearchSourceAnalysis,
   type ResearchSelectedCandidateSource,
   type ResearchSelectedSource,
   type ResearchWarning,
@@ -85,6 +86,7 @@ const rankingPromptTemplateId = "prompt.research-rank-sources.v1";
 const analysisPromptTemplateId = "prompt.research-analyze-source.v1";
 const rankingResponseSchemaId = "research.source-ranking.v1";
 const analysisResponseSchemaId = "research.article-analysis.v1";
+const analysisMaxAttempts = 2;
 
 export function createResearchCapability(
   dependencies: ResearchCapabilityDependencies,
@@ -631,6 +633,41 @@ async function rankSources(input: {
   warnings: ResearchWarning[];
 }): Promise<ResearchSourceRankingOutput | null> {
   const providerId = input.dependencies.providerId ?? defaultProviderId;
+
+  if (input.extractedSources.length === 1) {
+    const source = input.extractedSources[0];
+
+    if (!source) {
+      return null;
+    }
+
+    await input.context.trace.addStep({
+      kind: "workflow",
+      name: "rank relevance",
+      status: "completed",
+      summary: "Single extracted source did not require model ranking.",
+      metadata: {
+        providerId,
+        responseSchemaId: rankingResponseSchemaId,
+        sourceCount: 1,
+        rankedSourceCount: 1,
+        rankingMode: "single_source",
+      },
+    });
+
+    return {
+      rankings: [
+        {
+          sourceId: source.source.id,
+          relevanceScore: 1,
+          relevanceLabel: "high",
+          reason: "Only one source was extracted, so it remains selected for analysis.",
+          recommendedForSynthesis: true,
+        },
+      ],
+    };
+  }
+
   const health = await getUsableModelHealth(input.context, providerId, input.dependencies.model);
 
   if (!health.model) {
@@ -732,29 +769,13 @@ async function analyzeSources(input: {
 
   for (const extractedSource of input.extractedSources) {
     try {
-      const generation = structuredGenerationResultSchema.parse(
-        await input.context.llm.generateStructured({
-          providerId,
-          model: health.model,
-          systemPrompt:
-            "Analyze only the supplied extracted source content. Return schema-valid JSON only.",
-          prompt: buildAnalysisPrompt(input.request, extractedSource),
-          responseSchema: {
-            id: analysisResponseSchemaId,
-            description: "Research article analysis.",
-            schema: researchArticleAnalysisOutputSchema,
-          },
-          temperature: 0,
-          maxTokens: 1_500,
-          timeoutMs: 90_000,
-          keepAlive: null,
-          metadata: {
-            capabilityId: input.context.capability.id,
-            promptTemplateId: analysisPromptTemplateId,
-            sourceId: extractedSource.source.id,
-          },
-        }),
-      );
+      const generation = await generateSourceAnalysis({
+        context: input.context,
+        request: input.request,
+        extractedSource,
+        providerId,
+        model: health.model,
+      });
       const analysis = buildResearchSourceAnalysis({
         sourceId: extractedSource.source.id,
         evidenceId: requireEvidenceId(extractedSource.source),
@@ -769,21 +790,189 @@ async function analyzeSources(input: {
       });
       analyzed.push(updated);
     } catch (error) {
+      const failureCategory = safeFailureCategory(error, "source_analysis_failed");
       input.warnings.push(
         warning("source_analysis_failed", "A selected source could not be analyzed.", {
           sourceId: extractedSource.source.id,
-          failureCategory: safeFailureCategory(error, "source_analysis_failed"),
+          failureCategory,
         }),
       );
-      await input.dependencies.sourceRepository.updateStatus({
-        id: extractedSource.source.id,
-        workspaceId: extractedSource.source.workspaceId,
-        status: "analysis_failed",
-      });
+
+      try {
+        const fallbackAnalysis = buildFallbackSourceAnalysis({
+          request: input.request,
+          extractedSource,
+          analyzedAt: isoNow(input.dependencies),
+        });
+        const updated = await input.dependencies.sourceRepository.updateAnalysis({
+          id: extractedSource.source.id,
+          workspaceId: extractedSource.source.workspaceId,
+          analysis: fallbackAnalysis,
+          status: "analyzed",
+        });
+
+        input.warnings.push(
+          warning(
+            "source_analysis_fallback_used",
+            "A selected source used extracted-text fallback analysis after local model analysis failed.",
+            {
+              sourceId: extractedSource.source.id,
+              failureCategory,
+            },
+          ),
+        );
+        await input.context.trace.addStep({
+          kind: "workflow",
+          name: "fallback source analysis",
+          status: "completed",
+          summary: "Created citation-ready analysis from extracted source text.",
+          metadata: {
+            sourceId: extractedSource.source.id,
+            failureCategory,
+            claimCount: fallbackAnalysis.claims.length,
+          },
+        });
+        analyzed.push(updated);
+      } catch (fallbackError) {
+        input.warnings.push(
+          warning(
+            "source_analysis_fallback_failed",
+            "Fallback source analysis could not be created from extracted text.",
+            {
+              sourceId: extractedSource.source.id,
+              failureCategory: safeFailureCategory(
+                fallbackError,
+                "source_analysis_fallback_failed",
+              ),
+            },
+          ),
+        );
+        await input.dependencies.sourceRepository.updateStatus({
+          id: extractedSource.source.id,
+          workspaceId: extractedSource.source.workspaceId,
+          status: "analysis_failed",
+        });
+      }
     }
   }
 
   return analyzed;
+}
+
+function buildFallbackSourceAnalysis(input: {
+  request: ResearchRequest;
+  extractedSource: ExtractedResearchSource;
+  analyzedAt: string;
+}): ResearchSourceAnalysis {
+  const source = input.extractedSource.source;
+  const evidenceId = requireEvidenceId(source);
+  const excerpt = selectFallbackExcerpt({
+    contentText: input.extractedSource.document.contentText,
+    request: input.request,
+  });
+  const output = researchArticleAnalysisOutputSchema.parse({
+    sourceId: source.id,
+    summary: truncateAtWord(
+      `Fallback analysis used extracted text from ${source.title ?? "the selected source"}.`,
+      600,
+    ),
+    claims: [
+      {
+        claimText: excerpt,
+        sourceExcerpt: excerpt,
+        confidence: 0.72,
+      },
+    ],
+    caveats: [
+      "Structured local model analysis failed; this analysis uses a direct extracted source excerpt.",
+    ],
+    relevanceScore: 0.72,
+    confidence: 0.72,
+  });
+
+  return buildResearchSourceAnalysis({
+    sourceId: source.id,
+    evidenceId,
+    output,
+    analyzedAt: input.analyzedAt,
+  });
+}
+
+function selectFallbackExcerpt(input: { contentText: string; request: ResearchRequest }): string {
+  const normalized = normalizeWhitespace(input.contentText);
+  const terms = extractSignificantTerms(`${input.request.question} ${input.request.focus ?? ""}`);
+  const sentences = normalized
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 40);
+  const matched = sentences.find((sentence) => {
+    const normalizedSentence = sentence.toLowerCase();
+    return terms.some((term) => normalizedSentence.includes(term));
+  });
+  const fallback = matched ?? sentences[0] ?? normalized;
+
+  return truncateAtWord(fallback, 600);
+}
+
+async function generateSourceAnalysis(input: {
+  context: CapabilityExecutionContext;
+  request: ResearchRequest;
+  extractedSource: ExtractedResearchSource;
+  providerId: string;
+  model: string;
+}) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= analysisMaxAttempts; attempt += 1) {
+    try {
+      return structuredGenerationResultSchema.parse(
+        await input.context.llm.generateStructured({
+          providerId: input.providerId,
+          model: input.model,
+          systemPrompt:
+            "Analyze only the supplied extracted source content. Return one schema-valid JSON object.",
+          prompt: buildAnalysisPrompt(input.request, input.extractedSource, {
+            retry: attempt > 1,
+          }),
+          responseSchema: {
+            id: analysisResponseSchemaId,
+            description: "Research article analysis.",
+            schema: researchArticleAnalysisOutputSchema,
+          },
+          temperature: 0,
+          maxTokens: 3_000,
+          timeoutMs: 90_000,
+          keepAlive: null,
+          metadata: {
+            capabilityId: input.context.capability.id,
+            promptTemplateId: analysisPromptTemplateId,
+            sourceId: input.extractedSource.source.id,
+            attempt,
+          },
+        }),
+      );
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= analysisMaxAttempts || !isStructuredOutputRetryable(error)) {
+        throw error;
+      }
+
+      await input.context.trace.addStep({
+        kind: "workflow",
+        name: "retry source analysis",
+        status: "completed",
+        summary: "Retrying source analysis after invalid structured model output.",
+        metadata: {
+          sourceId: input.extractedSource.source.id,
+          nextAttempt: attempt + 1,
+          failureCategory: safeFailureCategory(error, "source_analysis_failed"),
+        },
+      });
+    }
+  }
+
+  throw lastError;
 }
 
 async function proposeMemoryIfEligible(input: {
@@ -1132,16 +1321,28 @@ function buildRankingPrompt(
 function buildAnalysisPrompt(
   request: ResearchRequest,
   extractedSource: ExtractedResearchSource,
+  options: { retry?: boolean } = {},
 ): string {
   return JSON.stringify({
     task: "Analyze this extracted source for citation-backed research findings.",
     question: request.question,
     focus: request.focus,
+    requirements: [
+      "Return exactly one JSON object.",
+      `sourceId must be exactly '${extractedSource.source.id}'.`,
+      "Use only the supplied source content.",
+      "Write a concise summary under 600 characters.",
+      "Return 1 to 4 concise claims when the source supports them.",
+      "Each sourceExcerpt must be copied or tightly paraphrased from the supplied content.",
+      ...(options.retry
+        ? ["This is a retry after invalid structured output; keep arrays short and avoid markdown."]
+        : []),
+    ],
     source: {
       sourceId: extractedSource.source.id,
       title: extractedSource.source.title,
       url: extractedSource.source.finalUrl ?? extractedSource.source.url,
-      content: extractedSource.document.contentText.slice(0, 8_000),
+      content: extractedSource.document.contentText.slice(0, options.retry ? 5_000 : 8_000),
     },
   });
 }
@@ -1152,6 +1353,53 @@ function requireEvidenceId(source: ResearchSelectedSource): string {
   }
 
   return source.evidenceId;
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function extractSignificantTerms(value: string): string[] {
+  const stopwords = new Set([
+    "about",
+    "after",
+    "application",
+    "before",
+    "could",
+    "first",
+    "local",
+    "should",
+    "source",
+    "support",
+    "their",
+    "there",
+    "these",
+    "which",
+    "with",
+  ]);
+
+  return [
+    ...new Set(
+      value
+        .toLowerCase()
+        .split(/[^a-z0-9]+/u)
+        .filter((term) => term.length >= 5 && !stopwords.has(term)),
+    ),
+  ].slice(0, 12);
+}
+
+function truncateAtWord(value: string, maxLength: number): string {
+  const normalized = normalizeWhitespace(value);
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  const truncated = normalized.slice(0, maxLength + 1);
+  const lastSpace = truncated.lastIndexOf(" ");
+  const boundary = lastSpace >= Math.floor(maxLength * 0.7) ? lastSpace : maxLength;
+
+  return `${normalized.slice(0, boundary).trim()}...`;
 }
 
 function isSearchProviderUsable(health: SearchProviderHealth): boolean {
@@ -1182,6 +1430,24 @@ function safeFailureCategory(error: unknown, fallback: string): string {
     .replace(/^_+/u, "")
     .toLowerCase()
     .slice(0, 120);
+}
+
+function isStructuredOutputRetryable(error: unknown): boolean {
+  const providerErrorKind = getNestedString(error, [
+    "platformError",
+    "details",
+    "providerErrorKind",
+  ]);
+  const category = safeFailureCategory(error, "source_analysis_failed");
+
+  return (
+    providerErrorKind === "provider_invalid_response" ||
+    providerErrorKind === "provider_schema_invalid" ||
+    category === "ai_provider_invalid_response" ||
+    category === "ai_provider_schema_invalid" ||
+    category === "provider_invalid_response" ||
+    category === "provider_schema_invalid"
+  );
 }
 
 function safeErrorMessage(error: unknown): string {

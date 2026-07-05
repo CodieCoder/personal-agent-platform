@@ -88,6 +88,29 @@ test("plain text responses can use bounded plain_text fallback", async () => {
   );
 });
 
+test("HTML extraction falls back to sanitized visible text when Readability output is too narrow", async () => {
+  const extractor = createReadabilityExtractor({
+    clock: () => new Date("2026-07-03T10:30:00.000Z"),
+    defaultReadabilityMinWordCount: 1_000,
+    defaultPlainTextMinWordCount: 20,
+  });
+
+  const document = await extractor.extract({
+    finalUrl: "https://fixture.example/articles/fixture",
+    html: readableHtml,
+    contentType: "text/html",
+  });
+
+  assert.equal(document.method, "plain_text");
+  assert.equal(document.title, "Fixture Article");
+  assert.equal(document.canonicalUrl, "https://fixture.example/articles/fixture");
+  assert.match(document.contentText, /Personal agent systems need deterministic extraction/u);
+  assert.equal(
+    document.warnings.some((warning) => warning.code === "extraction_plain_text_fallback"),
+    true,
+  );
+});
+
 test("empty or low-quality content returns a typed extraction failure with warnings", async () => {
   const extractor = createReadabilityExtractor({
     defaultReadabilityMinWordCount: 20,

@@ -105,7 +105,9 @@ PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 pnpm test:e2e
 - `pnpm test:unit` runs the Vitest unit project.
 - `pnpm test:integration` runs the Vitest integration project.
 - `pnpm test:e2e` runs the Playwright echo smoke test.
-- `pnpm test:qa` starts the web app with an isolated test database and runs the QA-Intel echo feature.
+- `pnpm test:qa` starts the web app with isolated SQLite state and runs QA-Intel against the
+  real local provider configuration from `.env`, `.env.local`, and process env.
+- `PAP_QA_PROVIDER_MODE=fixture pnpm test:qa` runs the deterministic QA-Intel fixture suite.
 - `pnpm build` runs configured Turbo build tasks when packages exist.
 - `pnpm dev:web` starts the TanStack Start web app.
 - `pnpm --filter @pap/web start` serves the built TanStack Start app through `srvx`.
