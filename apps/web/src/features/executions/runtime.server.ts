@@ -3,6 +3,8 @@ import "@tanstack/react-start/server-only";
 import { createOllamaProviderRegistry } from "@pap/ai-ollama";
 import { echoCapability } from "@pap/capability-echo";
 import { localModelTestCapability } from "@pap/capability-local-model-test";
+import { createResearchCapability } from "@pap/capability-research";
+import { createSearchExtractTestCapability } from "@pap/capability-search-extract-test";
 import { createMemoryService, type MemoryService } from "@pap/memory";
 import { createRuntime, type Runtime } from "@pap/runtime";
 import {
@@ -12,26 +14,46 @@ import {
   type ServerEnvironment,
   validateEnvironment,
 } from "@pap/shared";
+import { createSourceProfileService } from "@pap/source-profiles";
 import type {
   EpisodicMemoryRepository,
   ExecutionTraceRepository,
+  ResearchReportRepository,
+  ResearchSourceRepository,
   SemanticMemoryRepository,
+  SourceProfileRepository,
+  WebEvidenceRepository,
   WorkspaceRepository,
 } from "@pap/storage";
 import {
   createSqliteDatabase,
+  type MigrationResult,
   runMigrations,
+  type SqliteDatabaseConnection,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteResearchReportRepository,
+  SqliteResearchSourceRepository,
   SqliteSemanticMemoryRepository,
+  SqliteSourceProfileRepository,
+  SqliteWebEvidenceRepository,
   SqliteWorkspaceRepository,
-  type MigrationResult,
-  type SqliteDatabaseConnection,
 } from "@pap/storage-sqlite";
 import {
   createSearxngSearchProviderRegistry,
   defaultSearxngProviderId,
 } from "@pap/tools-search-searxng";
+import { createGuardedFetchClient, createUrlSafetyPolicy } from "@pap/tools-web";
+import {
+  createSearchTestFixtureGuardedFetchClient,
+  createSearchTestFixtureSearchProviderRegistry,
+  createSearchTestFixtureUrlSafetyPolicy,
+  shouldUseSearchTestFixtures,
+} from "../search-test/fixtures.server";
+import {
+  createResearchFixtureAIProviderRegistry,
+  shouldUseResearchTestFixtures,
+} from "../research/fixtures.server";
 
 export type WebRuntimeState = {
   env: Pick<ServerEnvironment, "PAP_ENVIRONMENT">;
@@ -42,6 +64,10 @@ export type WebRuntimeState = {
   workspaceRepository: WorkspaceRepository;
   semanticMemoryRepository: SemanticMemoryRepository;
   episodicMemoryRepository: EpisodicMemoryRepository;
+  sourceProfileRepository: SourceProfileRepository;
+  webEvidenceRepository: WebEvidenceRepository;
+  researchReportRepository: ResearchReportRepository;
+  researchSourceRepository: ResearchSourceRepository;
   memoryService: MemoryService;
   runtime: Runtime;
 };
@@ -65,22 +91,61 @@ export function getWebRuntimeState(): WebRuntimeState {
   const workspaceRepository = new SqliteWorkspaceRepository(connection.db);
   const semanticMemoryRepository = new SqliteSemanticMemoryRepository(connection.db);
   const episodicMemoryRepository = new SqliteEpisodicMemoryRepository(connection.db);
+  const sourceProfileRepository = new SqliteSourceProfileRepository(connection.db);
+  const webEvidenceRepository = new SqliteWebEvidenceRepository(connection.db);
+  const researchReportRepository = new SqliteResearchReportRepository(connection.db);
+  const researchSourceRepository = new SqliteResearchSourceRepository(connection.db);
   const memoryService = createMemoryService({
     semanticMemoryRepository,
     episodicMemoryRepository,
     executionTraceRepository: traceRepository,
   });
   const logger = createLogger({ level: env.PAP_LOG_LEVEL });
-  const aiProviderRegistry = createOllamaProviderRegistry({ env: runtimeEnv });
-  const searchProviderRegistry = createSearxngSearchProviderRegistry({ env: runtimeEnv });
+  const useResearchTestFixtures = shouldUseResearchTestFixtures({
+    environment: env.PAP_ENVIRONMENT,
+    rawEnv: runtimeEnv,
+  });
+  const aiProviderRegistry = useResearchTestFixtures
+    ? createResearchFixtureAIProviderRegistry({ rawEnv: runtimeEnv })
+    : createOllamaProviderRegistry({ env: runtimeEnv });
+  const useSearchTestFixtures =
+    shouldUseSearchTestFixtures({
+      environment: env.PAP_ENVIRONMENT,
+      rawEnv: runtimeEnv,
+    }) || useResearchTestFixtures;
+  const searchProviderRegistry = useSearchTestFixtures
+    ? createSearchTestFixtureSearchProviderRegistry({ rawEnv: runtimeEnv })
+    : createSearxngSearchProviderRegistry({ env: runtimeEnv });
+  const urlSafetyPolicy = useSearchTestFixtures
+    ? createSearchTestFixtureUrlSafetyPolicy()
+    : createUrlSafetyPolicy();
+  const guardedFetchClient = useSearchTestFixtures
+    ? createSearchTestFixtureGuardedFetchClient({ policy: urlSafetyPolicy })
+    : createGuardedFetchClient({ policy: urlSafetyPolicy });
+  const sourceProfileService = createSourceProfileService({
+    repository: sourceProfileRepository,
+  });
   const runtime = createRuntime({
     traceRepository,
     memoryService,
-    capabilities: [echoCapability, localModelTestCapability],
+    capabilities: [
+      echoCapability,
+      localModelTestCapability,
+      createResearchCapability({
+        reportRepository: researchReportRepository,
+        sourceRepository: researchSourceRepository,
+        memoryService,
+      }),
+      createSearchExtractTestCapability(),
+    ],
     logger,
     aiProviderRegistry,
     searchProviderRegistry,
     defaultSearchProviderId: defaultSearxngProviderId,
+    urlSafetyPolicy,
+    guardedFetchClient,
+    sourceProfileService,
+    webEvidenceRepository,
   });
 
   runtimeState = {
@@ -92,6 +157,10 @@ export function getWebRuntimeState(): WebRuntimeState {
     workspaceRepository,
     semanticMemoryRepository,
     episodicMemoryRepository,
+    sourceProfileRepository,
+    webEvidenceRepository,
+    researchReportRepository,
+    researchSourceRepository,
     memoryService,
     runtime,
   };

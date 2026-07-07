@@ -14,13 +14,17 @@ export function WorkspaceStatusPill({ status }: { status: Workspace["status"] })
 export function WorkspaceSelector({
   workspaces,
   selectedWorkspaceId,
+  id,
   includeAllOption = true,
+  allOptionLabel = "All active workspaces",
   restoreFromLocalStorage = false,
   autoSubmit = true,
 }: {
   workspaces: Workspace[];
   selectedWorkspaceId?: string | undefined;
+  id?: string;
   includeAllOption?: boolean;
+  allOptionLabel?: string;
   restoreFromLocalStorage?: boolean;
   autoSubmit?: boolean;
 }) {
@@ -61,6 +65,7 @@ export function WorkspaceSelector({
       aria-label="Workspace"
       className="select-input"
       defaultValue={selectedWorkspaceId ?? ""}
+      id={id}
       name="workspaceId"
       onChange={(event) => {
         if (autoSubmit) {
@@ -68,7 +73,7 @@ export function WorkspaceSelector({
         }
       }}
     >
-      {includeAllOption ? <option value="">All active workspaces</option> : null}
+      {includeAllOption ? <option value="">{allOptionLabel}</option> : null}
       {selectableWorkspaces.map((workspace) => (
         <option key={workspace.id} value={workspace.id}>
           {workspace.name}

@@ -457,6 +457,26 @@ select:focus-visible {
   text-decoration: underline;
 }
 
+.citation-chip {
+  background: var(--accent-soft);
+  border: 1px solid rgb(13 117 110 / 24%);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  text-decoration: none;
+}
+
+.citation-chip:hover {
+  text-decoration: underline;
+}
+
+.source-url {
+  overflow-wrap: anywhere;
+}
+
 .recent-list,
 .trace-list,
 .entity-list {
@@ -583,11 +603,63 @@ select:focus-visible {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.stat-card {
+  background: #f7faf7;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.stat-card-wide {
+  grid-column: 1 / -1;
+}
+
 .stat-value {
   font-family: Georgia, "Times New Roman", serif;
   font-size: 3rem;
   line-height: 1;
   margin: 0 0 16px;
+}
+
+.research-history-filters {
+  align-items: stretch;
+}
+
+.filter-context {
+  align-items: center;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+  display: inline-flex;
+  font-size: 0.86rem;
+  font-weight: 700;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.report-history-card a {
+  gap: 10px;
+}
+
+.history-card-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-card-metrics span {
+  background: #eef4f1;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  text-transform: uppercase;
 }
 
 .detail-grid {
@@ -664,6 +736,122 @@ select:focus-visible {
   gap: 8px;
   margin: 0;
   padding-left: 20px;
+}
+
+.search-result-list {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.search-result-card,
+.result-selected,
+.document-preview {
+  background: #f7faf7;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.search-result-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.search-result-main,
+.document-preview-head {
+  align-items: start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.search-result-main h3,
+.document-preview h4 {
+  font-size: 1rem;
+  line-height: 1.3;
+  margin: 0 0 6px;
+}
+
+.search-snippet {
+  color: var(--ink-muted);
+  font-size: 0.94rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.source-metadata {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.source-metadata div {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  padding-top: 9px;
+}
+
+.source-metadata dt {
+  color: var(--ink-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.source-metadata dd {
+  font-size: 0.88rem;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.compact-detail-grid {
+  gap: 0;
+  margin-top: 12px;
+}
+
+.warning-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.warning-list li {
+  align-items: start;
+  background: #fff8ef;
+  border: 1px solid rgb(165 83 32 / 24%);
+  border-radius: var(--radius);
+  color: var(--warn);
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(140px, 0.32fr) minmax(0, 1fr) auto;
+  padding: 9px 10px;
+}
+
+.document-preview {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.content-preview {
+  background: #13231f;
+  border-radius: var(--radius);
+  color: #e8f3ea;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .trace-metadata {
@@ -745,14 +933,22 @@ select:focus-visible {
 
   .dashboard-grid,
   .compact-fields,
-  .model-result-grid {
+  .model-result-grid,
+  .source-metadata {
     grid-template-columns: 1fr;
   }
 
   .status-row,
   .detail-row,
-  .trace-metadata-row {
+  .trace-metadata-row,
+  .warning-list li {
     grid-template-columns: 1fr;
+  }
+
+  .search-result-main,
+  .document-preview-head {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
