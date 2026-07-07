@@ -1,4 +1,6 @@
 import {
+  researchReportDashboardQuerySchema,
+  researchReportHistoryQuerySchema,
   researchReportIdSchema,
   researchReportStatusSchema,
   researchRequestSchema,
@@ -13,6 +15,8 @@ import type { Runtime } from "@pap/runtime";
 import type { SafeWebError } from "../executions/types";
 import type {
   ResearchMemoryStatusSummary,
+  ResearchReportDashboardResult,
+  ResearchReportHistoryResult,
   ResearchReportListResult,
   ResearchReportResult,
   ResearchRunResult,
@@ -141,6 +145,52 @@ export async function listResearchReportsOperation(
     return operationError(error, {
       code: "RESEARCH_LIST_FAILED",
       message: "Research reports could not be loaded.",
+    });
+  }
+}
+
+export async function listResearchReportHistoryOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchReportHistoryResult> {
+  const parsed = researchReportHistoryQuerySchema.safeParse(input ?? {});
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_HISTORY_QUERY_INVALID");
+  }
+
+  try {
+    return {
+      ok: true,
+      page: await state.reportRepository.listHistory(parsed.data),
+    };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_HISTORY_LOAD_FAILED",
+      message: "Research report history could not be loaded.",
+    });
+  }
+}
+
+export async function getResearchReportDashboardOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchReportDashboardResult> {
+  const parsed = researchReportDashboardQuerySchema.safeParse(input ?? {});
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_DASHBOARD_QUERY_INVALID");
+  }
+
+  try {
+    return {
+      ok: true,
+      summary: await state.reportRepository.getDashboardSummary(parsed.data),
+    };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_DASHBOARD_LOAD_FAILED",
+      message: "Research dashboard summary could not be loaded.",
     });
   }
 }

@@ -4,6 +4,9 @@ import type {
   ResearchCitation,
   ResearchFinding,
   ResearchReport,
+  ResearchReportHistoryItem,
+  ResearchReportHistoryPage,
+  ResearchReportHistorySort,
   ResearchReportStatus,
   ResearchSelectedSource,
   ResearchWarning,
@@ -11,7 +14,34 @@ import type {
 } from "@pap/contracts";
 import { DataRow, formatTimestamp, SafeError } from "../executions/components";
 import { WorkspaceSelector } from "../workspaces/components";
-import type { ResearchMemoryStatusSummary, ResearchReportListResult } from "./types";
+import type {
+  ResearchMemoryStatusSummary,
+  ResearchReportDashboardResult,
+  ResearchReportHistoryResult,
+  ResearchReportListResult,
+} from "./types";
+
+const researchReportStatuses = [
+  "pending",
+  "running",
+  "completed",
+  "completed_with_warnings",
+  "failed",
+  "cancelled",
+] as const satisfies readonly ResearchReportStatus[];
+
+export type ResearchHistorySearchState = {
+  workspaceId?: string | undefined;
+  status?: ResearchReportStatus | undefined;
+  dateFrom?: string | undefined;
+  dateTo?: string | undefined;
+  question?: string | undefined;
+  hasWarnings?: boolean | undefined;
+  hasPendingMemoryProposal?: boolean | undefined;
+  sort: ResearchReportHistorySort;
+  page: number;
+  pageSize: number;
+};
 
 export function ResearchStatusPill({ status }: { status: ResearchReportStatus }) {
   const className =
@@ -190,6 +220,250 @@ export function ResearchReportList({ result }: { result: ResearchReportListResul
         </li>
       ))}
     </ul>
+  );
+}
+
+export function ResearchDashboardSummary({ result }: { result: ResearchReportDashboardResult }) {
+  if (!result.ok) {
+    return <SafeError error={result.error} />;
+  }
+
+  const { summary } = result;
+
+  return (
+    <div className="dashboard-grid">
+      <article className="stat-card">
+        <span className="meta-label">Reports</span>
+        <p className="stat-value">{summary.totalReportCount}</p>
+        <p className="trace-meta">
+          {summary.workspaceId ? `Workspace ${summary.workspaceId}` : "Unscoped research"}
+        </p>
+      </article>
+      <article className="stat-card">
+        <span className="meta-label">Completed</span>
+        <p className="stat-value">
+          {summary.statusCounts.completed + summary.statusCounts.completed_with_warnings}
+        </p>
+        <p className="trace-meta">
+          {summary.statusCounts.failed} failed, {summary.statusCounts.running} running
+        </p>
+      </article>
+      <article className="stat-card">
+        <span className="meta-label">Review signals</span>
+        <p className="stat-value">{summary.warningReportCount}</p>
+        <p className="trace-meta">
+          {summary.pendingMemoryProposalReportCount} with pending memory proposals
+        </p>
+      </article>
+      <article className="stat-card stat-card-wide">
+        <span className="meta-label">Latest report</span>
+        <p className="stat-inline">
+          {summary.latestReportAt ? formatTimestamp(summary.latestReportAt) : "No reports"}
+        </p>
+      </article>
+    </div>
+  );
+}
+
+export function ResearchHistoryFilterForm({
+  action,
+  search,
+  workspaces,
+  scopedWorkspaceId,
+}: {
+  action: string;
+  search: ResearchHistorySearchState;
+  workspaces?: Workspace[] | undefined;
+  scopedWorkspaceId?: string | undefined;
+}) {
+  return (
+    <form action={action} className="filter-bar research-history-filters" method="get">
+      {workspaces ? (
+        <WorkspaceSelector
+          allOptionLabel="No workspace"
+          selectedWorkspaceId={search.workspaceId}
+          workspaces={workspaces}
+        />
+      ) : null}
+      {scopedWorkspaceId ? (
+        <span className="filter-context">
+          Workspace <span className="code-value">{scopedWorkspaceId}</span>
+        </span>
+      ) : null}
+      <input
+        aria-label="Question search"
+        className="compact-input"
+        defaultValue={search.question ?? ""}
+        maxLength={500}
+        name="question"
+        placeholder="Search questions"
+      />
+      <select
+        aria-label="Status"
+        className="select-input"
+        defaultValue={search.status ?? ""}
+        name="status"
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+      >
+        <option value="">Any status</option>
+        {researchReportStatuses.map((status) => (
+          <option key={status} value={status}>
+            {status}
+          </option>
+        ))}
+      </select>
+      <input
+        aria-label="From date"
+        className="compact-input"
+        defaultValue={search.dateFrom ?? ""}
+        name="dateFrom"
+        type="date"
+      />
+      <input
+        aria-label="To date"
+        className="compact-input"
+        defaultValue={search.dateTo ?? ""}
+        name="dateTo"
+        type="date"
+      />
+      <select
+        aria-label="Warnings"
+        className="select-input"
+        defaultValue={formatBooleanFilter(search.hasWarnings)}
+        name="hasWarnings"
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+      >
+        <option value="">Any warnings</option>
+        <option value="true">Has warnings</option>
+        <option value="false">No warnings</option>
+      </select>
+      <select
+        aria-label="Pending memory proposals"
+        className="select-input"
+        defaultValue={formatBooleanFilter(search.hasPendingMemoryProposal)}
+        name="hasPendingMemoryProposal"
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+      >
+        <option value="">Any memory state</option>
+        <option value="true">Pending memory</option>
+        <option value="false">No pending memory</option>
+      </select>
+      <select
+        aria-label="Sort"
+        className="select-input"
+        defaultValue={search.sort}
+        name="sort"
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+      >
+        <option value="newest_completed_or_updated_first">Newest first</option>
+        <option value="oldest_completed_or_updated_first">Oldest first</option>
+      </select>
+      <select
+        aria-label="Page size"
+        className="select-input"
+        defaultValue={String(search.pageSize)}
+        name="pageSize"
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+      >
+        {[5, 10, 20, 50].map((pageSize) => (
+          <option key={pageSize} value={pageSize}>
+            {pageSize} rows
+          </option>
+        ))}
+      </select>
+      <button className="secondary-button" type="submit">
+        Apply filters
+      </button>
+      <a className="text-link" href={action}>
+        Clear filters
+      </a>
+    </form>
+  );
+}
+
+export function ResearchReportHistoryList({ result }: { result: ResearchReportHistoryResult }) {
+  if (!result.ok) {
+    return <SafeError error={result.error} />;
+  }
+
+  if (result.page.reports.length === 0) {
+    return <p className="empty-state">No research reports match these filters.</p>;
+  }
+
+  return (
+    <ul className="entity-list">
+      {result.page.reports.map((report) => (
+        <li className="entity-item report-history-card" key={report.id}>
+          <a
+            aria-label={`Open research report ${report.id}`}
+            href={researchHistoryReportHref(report)}
+          >
+            <span className="entity-item-header">
+              <span>{report.question}</span>
+              <ResearchStatusPill status={report.status} />
+            </span>
+            <span className="history-card-metrics">
+              <span>{report.sourceCount} sources</span>
+              <span>{report.warningCount} warnings</span>
+              <span>{report.pendingMemoryProposalCount} pending memory</span>
+            </span>
+            <span className="trace-meta">
+              Completed{" "}
+              {report.completedAt ? formatTimestamp(report.completedAt) : "not yet completed"} -
+              updated {formatTimestamp(report.effectiveAt)}
+            </span>
+            <span className="trace-meta">
+              workspace <span className="code-value">{report.workspaceId ?? "unscoped"}</span>
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function ResearchHistoryPagination({
+  basePath,
+  page,
+  search,
+}: {
+  basePath: string;
+  page: Pick<
+    ResearchReportHistoryPage,
+    "hasNextPage" | "hasPreviousPage" | "page" | "pageSize" | "total"
+  >;
+  search: ResearchHistorySearchState;
+}) {
+  if (!page.hasPreviousPage && !page.hasNextPage) {
+    return null;
+  }
+
+  return (
+    <nav aria-label="Research report history pagination" className="pagination-bar">
+      {page.hasPreviousPage ? (
+        <a
+          className="secondary-button"
+          href={buildResearchHistoryHref(basePath, { ...search, page: page.page - 1 })}
+        >
+          Previous
+        </a>
+      ) : (
+        <span className="secondary-button pagination-disabled">Previous</span>
+      )}
+      <span className="trace-meta">
+        Page {page.page} - {page.total} reports
+      </span>
+      {page.hasNextPage ? (
+        <a
+          className="secondary-button"
+          href={buildResearchHistoryHref(basePath, { ...search, page: page.page + 1 })}
+        >
+          Next
+        </a>
+      ) : (
+        <span className="secondary-button pagination-disabled">Next</span>
+      )}
+    </nav>
   );
 }
 
@@ -496,4 +770,48 @@ function researchReportHref(report: ResearchReport): string {
   return report.workspaceId
     ? `${base}?workspaceId=${encodeURIComponent(report.workspaceId)}`
     : base;
+}
+
+function researchHistoryReportHref(report: ResearchReportHistoryItem): string {
+  const base = `/research/${encodeURIComponent(report.id)}`;
+  return report.workspaceId
+    ? `${base}?workspaceId=${encodeURIComponent(report.workspaceId)}`
+    : base;
+}
+
+function buildResearchHistoryHref(basePath: string, search: ResearchHistorySearchState): string {
+  const params = new URLSearchParams();
+
+  setSearchParam(params, "workspaceId", search.workspaceId);
+  setSearchParam(params, "status", search.status);
+  setSearchParam(params, "dateFrom", search.dateFrom);
+  setSearchParam(params, "dateTo", search.dateTo);
+  setSearchParam(params, "question", search.question);
+  setBooleanSearchParam(params, "hasWarnings", search.hasWarnings);
+  setBooleanSearchParam(params, "hasPendingMemoryProposal", search.hasPendingMemoryProposal);
+  setSearchParam(params, "sort", search.sort);
+  params.set("page", String(search.page));
+  params.set("pageSize", String(search.pageSize));
+
+  return `${basePath}?${params.toString()}`;
+}
+
+function setSearchParam(params: URLSearchParams, key: string, value: string | undefined): void {
+  if (value) {
+    params.set(key, value);
+  }
+}
+
+function setBooleanSearchParam(
+  params: URLSearchParams,
+  key: string,
+  value: boolean | undefined,
+): void {
+  if (value !== undefined) {
+    params.set(key, String(value));
+  }
+}
+
+function formatBooleanFilter(value: boolean | undefined): string {
+  return value === undefined ? "" : String(value);
 }

@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
+  getResearchReportDashboardOperation,
   getResearchReportOperation,
+  listResearchReportHistoryOperation,
   listResearchReportsOperation,
   runResearchOperation,
 } from "./operations";
@@ -13,6 +15,18 @@ export const listResearchReports = createServerFn({ method: "GET" })
   .validator((input: unknown) => input)
   .handler(async ({ data }) =>
     withResearchState((state) => listResearchReportsOperation(state, data)),
+  );
+
+export const listResearchReportHistory = createServerFn({ method: "GET" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => listResearchReportHistoryOperation(state, data)),
+  );
+
+export const getResearchReportDashboard = createServerFn({ method: "GET" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => getResearchReportDashboardOperation(state, data)),
   );
 
 export const getResearchReport = createServerFn({ method: "GET" })

@@ -1,6 +1,8 @@
 import type {
   MemoryStatus,
   ResearchReport,
+  ResearchReportDashboardSummary,
+  ResearchReportHistoryPage,
   ResearchReportListPage,
   ResearchReportStatus,
   WorkspaceId,
@@ -32,6 +34,26 @@ export type ResearchReportListResult =
   | {
       ok: true;
       page: ResearchReportListPage;
+    }
+  | {
+      ok: false;
+      error: SafeWebError;
+    };
+
+export type ResearchReportHistoryResult =
+  | {
+      ok: true;
+      page: ResearchReportHistoryPage;
+    }
+  | {
+      ok: false;
+      error: SafeWebError;
+    };
+
+export type ResearchReportDashboardResult =
+  | {
+      ok: true;
+      summary: ResearchReportDashboardSummary;
     }
   | {
       ok: false;

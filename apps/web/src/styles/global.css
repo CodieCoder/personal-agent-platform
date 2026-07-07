@@ -603,11 +603,63 @@ select:focus-visible {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.stat-card {
+  background: #f7faf7;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.stat-card-wide {
+  grid-column: 1 / -1;
+}
+
 .stat-value {
   font-family: Georgia, "Times New Roman", serif;
   font-size: 3rem;
   line-height: 1;
   margin: 0 0 16px;
+}
+
+.research-history-filters {
+  align-items: stretch;
+}
+
+.filter-context {
+  align-items: center;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+  display: inline-flex;
+  font-size: 0.86rem;
+  font-weight: 700;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.report-history-card a {
+  gap: 10px;
+}
+
+.history-card-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-card-metrics span {
+  background: #eef4f1;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  text-transform: uppercase;
 }
 
 .detail-grid {

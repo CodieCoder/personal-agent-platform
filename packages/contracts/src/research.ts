@@ -88,6 +88,22 @@ const researchClaimTextSchema = z.string().trim().min(1).max(2_000);
 const researchExcerptSchema = z.string().trim().min(1).max(2_000);
 const researchMessageSchema = z.string().trim().min(1).max(1_000);
 const researchHostnameSchema = z.string().trim().min(1).max(253);
+const researchHistoryQuestionFilterSchema = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}, z.string().trim().min(1).max(500).optional());
+const researchHistoryDateOnlySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/u, {
+    message: "Research history date filters must use YYYY-MM-DD.",
+  })
+  .refine(isValidDateOnly, {
+    message: "Research history date filters must be valid calendar dates.",
+  });
 const researchCodeSchema = z
   .string()
   .trim()
@@ -446,6 +462,91 @@ export const researchReportListPageSchema = z
   })
   .strict();
 
+export const researchReportHistorySortSchema = z.enum([
+  "newest_completed_or_updated_first",
+  "oldest_completed_or_updated_first",
+]);
+
+export const researchReportHistoryQuerySchema = z
+  .object({
+    workspaceId: nullableWorkspaceIdSchema.default(null),
+    status: researchReportStatusSchema.optional(),
+    dateFrom: researchHistoryDateOnlySchema.optional(),
+    dateTo: researchHistoryDateOnlySchema.optional(),
+    question: researchHistoryQuestionFilterSchema,
+    hasWarnings: z.boolean().optional(),
+    hasPendingMemoryProposal: z.boolean().optional(),
+    sort: researchReportHistorySortSchema.default("newest_completed_or_updated_first"),
+    page: z.number().int().min(1).default(1),
+    pageSize: z.number().int().min(1).max(50).default(10),
+  })
+  .strict()
+  .refine(
+    (query) =>
+      query.dateFrom === undefined || query.dateTo === undefined || query.dateFrom <= query.dateTo,
+    {
+      message: "Research report history date range cannot be inverted.",
+      path: ["dateTo"],
+    },
+  );
+
+export const researchReportHistoryItemSchema = z
+  .object({
+    id: researchReportIdSchema,
+    executionId: executionIdSchema,
+    workspaceId: nullableWorkspaceIdSchema,
+    question: researchQuestionSchema,
+    status: researchReportStatusSchema,
+    sourceCount: z.number().int().nonnegative(),
+    warningCount: z.number().int().nonnegative(),
+    pendingMemoryProposalCount: z.number().int().nonnegative(),
+    createdAt: isoDateTimeSchema,
+    updatedAt: isoDateTimeSchema,
+    completedAt: isoDateTimeSchema.nullable(),
+    effectiveAt: isoDateTimeSchema,
+  })
+  .strict();
+
+export const researchReportHistoryPageSchema = z
+  .object({
+    reports: z.array(researchReportHistoryItemSchema),
+    filters: researchReportHistoryQuerySchema,
+    page: z.number().int().min(1),
+    pageSize: z.number().int().min(1).max(50),
+    total: z.number().int().nonnegative(),
+    hasNextPage: z.boolean(),
+    hasPreviousPage: z.boolean(),
+  })
+  .strict();
+
+export const researchReportDashboardQuerySchema = z
+  .object({
+    workspaceId: nullableWorkspaceIdSchema.default(null),
+  })
+  .strict();
+
+export const researchReportStatusCountsSchema = z
+  .object({
+    pending: z.number().int().nonnegative(),
+    running: z.number().int().nonnegative(),
+    completed: z.number().int().nonnegative(),
+    completed_with_warnings: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    cancelled: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const researchReportDashboardSummarySchema = z
+  .object({
+    workspaceId: nullableWorkspaceIdSchema,
+    totalReportCount: z.number().int().nonnegative(),
+    statusCounts: researchReportStatusCountsSchema,
+    warningReportCount: z.number().int().nonnegative(),
+    pendingMemoryProposalReportCount: z.number().int().nonnegative(),
+    latestReportAt: isoDateTimeSchema.nullable(),
+  })
+  .strict();
+
 export type ResearchReportId = z.infer<typeof researchReportIdSchema>;
 export type ResearchSourceId = z.infer<typeof researchSourceIdSchema>;
 export type ResearchCitationId = z.infer<typeof researchCitationIdSchema>;
@@ -497,6 +598,13 @@ export type ResearchReportSummary = z.infer<typeof researchReportSummarySchema>;
 export type ResearchSelectedSource = z.infer<typeof researchSelectedSourceSchema>;
 export type ResearchReport = z.infer<typeof researchReportSchema>;
 export type ResearchReportListPage = z.infer<typeof researchReportListPageSchema>;
+export type ResearchReportHistorySort = z.infer<typeof researchReportHistorySortSchema>;
+export type ResearchReportHistoryQuery = z.infer<typeof researchReportHistoryQuerySchema>;
+export type ResearchReportHistoryItem = z.infer<typeof researchReportHistoryItemSchema>;
+export type ResearchReportHistoryPage = z.infer<typeof researchReportHistoryPageSchema>;
+export type ResearchReportDashboardQuery = z.infer<typeof researchReportDashboardQuerySchema>;
+export type ResearchReportStatusCounts = z.infer<typeof researchReportStatusCountsSchema>;
+export type ResearchReportDashboardSummary = z.infer<typeof researchReportDashboardSummarySchema>;
 
 function validateNormalizedResearchCandidate(
   candidate: NormalizedResearchCandidateSource,
@@ -752,4 +860,16 @@ function validateResearchReport(report: ResearchReport, context: z.RefinementCtx
       }
     }
   });
+}
+
+function isValidDateOnly(value: string): boolean {
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
 }

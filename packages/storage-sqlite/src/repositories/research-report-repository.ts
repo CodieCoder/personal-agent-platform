@@ -1,28 +1,43 @@
 import {
   type ExecutionId,
   type ResearchReport,
+  type ResearchReportDashboardSummary,
+  type ResearchReportHistoryItem,
+  type ResearchReportHistoryPage,
+  type ResearchReportHistorySort,
   type ResearchReportId,
   type ResearchReportListPage,
   type ResearchSelectedSource,
   type ResearchReportStatus,
   type WorkspaceId,
+  researchReportDashboardQuerySchema,
+  researchReportDashboardSummarySchema,
+  researchReportHistoryPageSchema,
+  researchReportHistoryQuerySchema,
   researchReportListPageSchema,
   researchReportSchema,
 } from "@pap/contracts";
 import { createId, nowIso } from "@pap/shared";
 import type {
   CreateResearchReportInput,
+  GetResearchReportDashboardSummaryInput,
   GetResearchReportByIdInput,
+  ListResearchReportHistoryInput,
   ListResearchReportsInput,
   ReplaceResearchReportContentInput,
   ResearchReportRepository,
   UpdateResearchReportStatusInput,
 } from "@pap/storage";
-import { and, asc, count, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull, lte, ne, sql, type SQL } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { executionTraces, researchReports, researchSources } from "../schema/index.js";
+import {
+  executionTraces,
+  researchReports,
+  researchSources,
+  semanticMemory,
+} from "../schema/index.js";
 import type * as sqliteSchema from "../schema/index.js";
-import { toResearchReport, toResearchSelectedSource } from "./research-mappers.js";
+import { parseJson, toResearchReport, toResearchSelectedSource } from "./research-mappers.js";
 
 const defaultPage = 1;
 const defaultPageSize = 20;
@@ -119,6 +134,112 @@ export class SqliteResearchReportRepository implements ResearchReportRepository 
       total,
       hasNextPage: offset + reports.length < total,
       hasPreviousPage: page > 1,
+    });
+  }
+
+  async listHistory(input: ListResearchReportHistoryInput): Promise<ResearchReportHistoryPage> {
+    const query = researchReportHistoryQuerySchema.parse(input);
+    const offset = (query.page - 1) * query.pageSize;
+    const filters = buildReportHistoryFilters(query);
+    const orderBy = buildHistoryOrderBy(query.sort);
+
+    const rows = await this.db
+      .select({
+        id: researchReports.id,
+        executionId: researchReports.executionId,
+        workspaceId: researchReports.workspaceId,
+        question: researchReports.question,
+        status: researchReports.status,
+        warningsJson: researchReports.warningsJson,
+        pendingMemoryProposalCount: pendingMemoryProposalCountSql(),
+        createdAt: researchReports.createdAt,
+        updatedAt: researchReports.updatedAt,
+        completedAt: researchReports.completedAt,
+        effectiveAt: effectiveReportTimestampSql(),
+      })
+      .from(researchReports)
+      .where(and(...filters))
+      .orderBy(...orderBy)
+      .limit(query.pageSize)
+      .offset(offset);
+
+    const [totalRow] = await this.db
+      .select({ total: count() })
+      .from(researchReports)
+      .where(and(...filters));
+
+    const reports: ResearchReportHistoryItem[] = [];
+
+    for (const row of rows) {
+      reports.push(
+        toResearchReportHistoryItem({
+          ...row,
+          sourceCount: await this.getSourceCount(row.id),
+        }),
+      );
+    }
+    const total = totalRow?.total ?? 0;
+
+    return researchReportHistoryPageSchema.parse({
+      reports,
+      filters: query,
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+      hasNextPage: offset + reports.length < total,
+      hasPreviousPage: query.page > 1,
+    });
+  }
+
+  async getDashboardSummary(
+    input: GetResearchReportDashboardSummaryInput,
+  ): Promise<ResearchReportDashboardSummary> {
+    const query = researchReportDashboardQuerySchema.parse(input);
+    const rows = await this.db
+      .select({
+        status: researchReports.status,
+        warningsJson: researchReports.warningsJson,
+        pendingMemoryProposalCount: pendingMemoryProposalCountSql(),
+        effectiveAt: effectiveReportTimestampSql(),
+      })
+      .from(researchReports)
+      .where(reportWorkspaceFilter(query.workspaceId));
+
+    const statusCounts = {
+      pending: 0,
+      running: 0,
+      completed: 0,
+      completed_with_warnings: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+    let warningReportCount = 0;
+    let pendingMemoryProposalReportCount = 0;
+    let latestReportAt: string | null = null;
+
+    for (const row of rows) {
+      statusCounts[row.status] += 1;
+
+      if (countWarningsJson(row.warningsJson) > 0) {
+        warningReportCount += 1;
+      }
+
+      if (Number(row.pendingMemoryProposalCount) > 0) {
+        pendingMemoryProposalReportCount += 1;
+      }
+
+      if (latestReportAt === null || row.effectiveAt > latestReportAt) {
+        latestReportAt = row.effectiveAt;
+      }
+    }
+
+    return researchReportDashboardSummarySchema.parse({
+      workspaceId: query.workspaceId,
+      totalReportCount: rows.length,
+      statusCounts,
+      warningReportCount,
+      pendingMemoryProposalReportCount,
+      latestReportAt,
     });
   }
 
@@ -227,6 +348,15 @@ export class SqliteResearchReportRepository implements ResearchReportRepository 
     return rows.map(toResearchSelectedSource);
   }
 
+  private async getSourceCount(reportId: ResearchReportId): Promise<number> {
+    const [row] = await this.db
+      .select({ total: count() })
+      .from(researchSources)
+      .where(eq(researchSources.reportId, reportId));
+
+    return row?.total ?? 0;
+  }
+
   private async assertExecutionWorkspace(
     executionId: ExecutionId,
     workspaceId: WorkspaceId | null,
@@ -264,10 +394,127 @@ function buildReportFilters(input: ListResearchReportsInput): SQL[] {
   return filters;
 }
 
+function buildReportHistoryFilters(input: ListResearchReportHistoryInput): SQL[] {
+  const filters: SQL[] = [reportWorkspaceFilter(input.workspaceId)];
+
+  if (input.status) {
+    filters.push(eq(researchReports.status, input.status));
+  }
+
+  if (input.dateFrom) {
+    filters.push(gte(effectiveReportTimestampSql(), `${input.dateFrom}T00:00:00.000Z`));
+  }
+
+  if (input.dateTo) {
+    filters.push(lte(effectiveReportTimestampSql(), `${input.dateTo}T23:59:59.999Z`));
+  }
+
+  if (input.question) {
+    filters.push(
+      sql`lower(${researchReports.question}) like ${`%${escapeSqliteLike(
+        input.question.toLowerCase(),
+      )}%`} escape '\\'`,
+    );
+  }
+
+  if (input.hasWarnings === true) {
+    filters.push(ne(researchReports.warningsJson, "[]"));
+  } else if (input.hasWarnings === false) {
+    filters.push(eq(researchReports.warningsJson, "[]"));
+  }
+
+  if (input.hasPendingMemoryProposal === true) {
+    filters.push(pendingMemoryProposalExistsSql());
+  } else if (input.hasPendingMemoryProposal === false) {
+    filters.push(sql`not ${pendingMemoryProposalExistsSql()}`);
+  }
+
+  return filters;
+}
+
 function reportWorkspaceFilter(workspaceId: WorkspaceId | null): SQL {
   return workspaceId === null
     ? isNull(researchReports.workspaceId)
     : eq(researchReports.workspaceId, workspaceId);
+}
+
+function buildHistoryOrderBy(sort: ResearchReportHistorySort): SQL[] {
+  const effectiveAt = effectiveReportTimestampSql();
+
+  if (sort === "oldest_completed_or_updated_first") {
+    return [asc(effectiveAt), asc(researchReports.id)];
+  }
+
+  return [desc(effectiveAt), desc(researchReports.id)];
+}
+
+function effectiveReportTimestampSql(): SQL<string> {
+  return sql<string>`coalesce(${researchReports.completedAt}, ${researchReports.updatedAt}, ${researchReports.createdAt})`;
+}
+
+function pendingMemoryProposalCountSql(): SQL<number> {
+  return sql<number>`(
+    select count(*)
+    from ${semanticMemory}
+    where ${semanticMemory.sourceExecutionId} = ${researchReports.executionId}
+      and ${semanticMemory.status} = 'proposed'
+      and (
+        ${semanticMemory.workspaceId} = ${researchReports.workspaceId}
+        or (${semanticMemory.workspaceId} is null and ${researchReports.workspaceId} is null)
+      )
+  )`;
+}
+
+function pendingMemoryProposalExistsSql(): SQL {
+  return sql`exists (
+    select 1
+    from ${semanticMemory}
+    where ${semanticMemory.sourceExecutionId} = ${researchReports.executionId}
+      and ${semanticMemory.status} = 'proposed'
+      and (
+        ${semanticMemory.workspaceId} = ${researchReports.workspaceId}
+        or (${semanticMemory.workspaceId} is null and ${researchReports.workspaceId} is null)
+      )
+  )`;
+}
+
+function toResearchReportHistoryItem(row: {
+  id: ResearchReportId;
+  executionId: ExecutionId;
+  workspaceId: WorkspaceId | null;
+  question: string;
+  status: ResearchReportStatus;
+  warningsJson: string;
+  sourceCount: unknown;
+  pendingMemoryProposalCount: unknown;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  effectiveAt: string;
+}): ResearchReportHistoryItem {
+  return {
+    id: row.id,
+    executionId: row.executionId,
+    workspaceId: row.workspaceId,
+    question: row.question,
+    status: row.status,
+    sourceCount: Number(row.sourceCount),
+    warningCount: countWarningsJson(row.warningsJson),
+    pendingMemoryProposalCount: Number(row.pendingMemoryProposalCount),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    completedAt: row.completedAt,
+    effectiveAt: row.effectiveAt,
+  };
+}
+
+function countWarningsJson(value: string): number {
+  const warnings = parseJson(value);
+  return Array.isArray(warnings) ? warnings.length : 0;
+}
+
+function escapeSqliteLike(value: string): string {
+  return value.replace(/[\\%_]/gu, (match) => `\\${match}`);
 }
 
 function normalizePage(page: number | undefined): number {

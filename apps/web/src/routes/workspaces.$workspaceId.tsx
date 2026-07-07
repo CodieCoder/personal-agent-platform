@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { SafeError } from "../features/executions/components";
 import { WorkspaceMetadata } from "../features/workspaces/components";
 import { archiveWorkspace, getWorkspace } from "../features/workspaces/server";
@@ -14,8 +14,17 @@ export const Route = createFileRoute("/workspaces/$workspaceId")({
 
 function WorkspaceDetailRoute() {
   const result = Route.useLoaderData();
+  const { workspaceId } = Route.useParams();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [archiveResult, setArchiveResult] = useState<WorkspaceRecordResult | null>(null);
   const [isArchiving, setIsArchiving] = useState(false);
+
+  if (
+    pathname !== `/workspaces/${workspaceId}` &&
+    pathname !== `/workspaces/${encodeURIComponent(workspaceId)}`
+  ) {
+    return <Outlet />;
+  }
 
   async function submitArchive(workspaceId: string) {
     const confirmed = window.confirm("Archive this workspace?");
@@ -93,6 +102,12 @@ function WorkspaceDetailRoute() {
                   )}`}
                 >
                   Episodic memory
+                </a>
+                <a
+                  className="text-link"
+                  href={`/workspaces/${encodeURIComponent(result.workspace.id)}/research`}
+                >
+                  Research dashboard
                 </a>
               </div>
             </section>

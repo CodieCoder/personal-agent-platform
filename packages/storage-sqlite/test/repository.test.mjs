@@ -513,6 +513,240 @@ test("SqliteResearch repositories persist reports, sources, analyses, citations,
   }
 });
 
+test("SqliteResearchReportRepository lists workspace-scoped history summaries", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-research-history-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    semanticMemoryRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_history_alpha", name: "History Alpha" });
+    await workspaceRepository.create({ id: "workspace_history_beta", name: "History Beta" });
+    await traceRepository.create({
+      id: "exec_history_alpha_old",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_alpha",
+      startedAt: "2026-07-01T08:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_alpha_warning",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_alpha",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_alpha_pending",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_alpha",
+      startedAt: "2026-07-05T10:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_beta_warning",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_beta",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_unscoped",
+      capabilityId: "capability.research",
+      startedAt: "2026-07-06T09:00:00.000Z",
+    });
+
+    const oldReport = await researchReportRepository.create({
+      id: "research_report_history_old",
+      executionId: "exec_history_alpha_old",
+      workspaceId: "workspace_history_alpha",
+      question: "How did earlier research behave?",
+      summary: researchSummaryFixture("Older report."),
+      status: "completed",
+      createdAt: "2026-07-01T08:01:00.000Z",
+      completedAt: "2026-07-01T08:02:00.000Z",
+    });
+    const warningReport = await researchReportRepository.create({
+      id: "research_report_history_warning",
+      executionId: "exec_history_alpha_warning",
+      workspaceId: "workspace_history_alpha",
+      question: "How should local AI research warnings be reviewed?",
+      summary: researchSummaryFixture("Warning report."),
+      warnings: [
+        {
+          code: "partial_source_failure",
+          message: "One source could not be fetched.",
+        },
+      ],
+      status: "completed_with_warnings",
+      createdAt: "2026-07-04T09:01:00.000Z",
+      completedAt: "2026-07-04T09:05:00.000Z",
+    });
+    const pendingReport = await researchReportRepository.create({
+      id: "research_report_history_pending",
+      executionId: "exec_history_alpha_pending",
+      workspaceId: "workspace_history_alpha",
+      question: "What research is still running?",
+      summary: researchSummaryFixture("Pending report."),
+      status: "running",
+      createdAt: "2026-07-05T10:01:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_history_beta",
+      executionId: "exec_history_beta_warning",
+      workspaceId: "workspace_history_beta",
+      question: "How should local AI research warnings be reviewed?",
+      summary: researchSummaryFixture("Beta report."),
+      warnings: [
+        {
+          code: "partial_source_failure",
+          message: "Beta warning should stay isolated.",
+        },
+      ],
+      status: "completed_with_warnings",
+      createdAt: "2026-07-04T09:01:00.000Z",
+      completedAt: "2026-07-04T09:06:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_history_unscoped",
+      executionId: "exec_history_unscoped",
+      workspaceId: null,
+      question: "Unscoped report should stay unscoped.",
+      summary: researchSummaryFixture("Unscoped report."),
+      status: "completed",
+      createdAt: "2026-07-06T09:01:00.000Z",
+      completedAt: "2026-07-06T09:02:00.000Z",
+    });
+
+    await researchSourceRepository.create({
+      id: "research_source_history_warning_a",
+      reportId: warningReport.id,
+      executionId: warningReport.executionId,
+      workspaceId: warningReport.workspaceId,
+      url: "https://example.com/history-a",
+      title: "History warning A",
+      selectionRank: 1,
+      status: "fetch_failed",
+    });
+    await researchSourceRepository.create({
+      id: "research_source_history_warning_b",
+      reportId: warningReport.id,
+      executionId: warningReport.executionId,
+      workspaceId: warningReport.workspaceId,
+      url: "https://example.com/history-b",
+      title: "History warning B",
+      selectionRank: 2,
+      status: "fetch_failed",
+    });
+    await researchSourceRepository.create({
+      id: "research_source_history_old",
+      reportId: oldReport.id,
+      executionId: oldReport.executionId,
+      workspaceId: oldReport.workspaceId,
+      url: "https://example.com/history-old",
+      title: "History old",
+      selectionRank: 1,
+      status: "fetch_failed",
+    });
+    await semanticMemoryRepository.create({
+      id: "memory_history_proposal",
+      scope: "workspace",
+      workspaceId: "workspace_history_alpha",
+      subject: "research.local_ai",
+      predicate: "found",
+      value: "Local AI warning report has a pending proposal.",
+      status: "proposed",
+      sourceType: "research_report",
+      sourceExecutionId: warningReport.executionId,
+      sourceCapabilityId: "capability.research",
+    });
+
+    const newest = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      page: 1,
+      pageSize: 10,
+    });
+    const warnings = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      hasWarnings: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const pendingMemory = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      hasPendingMemoryProposal: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const questionFiltered = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      question: "LOCAL ai",
+      dateFrom: "2026-07-04",
+      dateTo: "2026-07-04",
+      page: 1,
+      pageSize: 10,
+    });
+    const paged = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      page: 2,
+      pageSize: 1,
+    });
+    const beta = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_beta",
+      hasPendingMemoryProposal: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const unscoped = await researchReportRepository.listHistory({
+      workspaceId: null,
+      page: 1,
+      pageSize: 10,
+    });
+    const dashboard = await researchReportRepository.getDashboardSummary({
+      workspaceId: "workspace_history_alpha",
+    });
+
+    assert.deepEqual(
+      newest.reports.map((report) => report.id),
+      [pendingReport.id, warningReport.id, oldReport.id],
+    );
+    assert.deepEqual(
+      warnings.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.equal(warnings.reports[0].sourceCount, 2);
+    assert.equal(warnings.reports[0].warningCount, 1);
+    assert.equal(warnings.reports[0].pendingMemoryProposalCount, 1);
+    assert.deepEqual(
+      pendingMemory.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.deepEqual(
+      questionFiltered.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.deepEqual(
+      paged.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.equal(paged.hasPreviousPage, true);
+    assert.equal(paged.hasNextPage, true);
+    assert.deepEqual(beta.reports, []);
+    assert.deepEqual(
+      unscoped.reports.map((report) => report.id),
+      ["research_report_history_unscoped"],
+    );
+    assert.equal(dashboard.totalReportCount, 3);
+    assert.equal(dashboard.statusCounts.completed_with_warnings, 1);
+    assert.equal(dashboard.warningReportCount, 1);
+    assert.equal(dashboard.pendingMemoryProposalReportCount, 1);
+    assert.equal(dashboard.latestReportAt, "2026-07-05T10:01:00.000Z");
+  } finally {
+    close();
+  }
+});
+
 test("SqliteResearch repositories reject invalid linkage and roll back content updates", async () => {
   const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-research-invalid-");
   const {

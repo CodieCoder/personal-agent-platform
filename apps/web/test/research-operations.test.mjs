@@ -24,7 +24,9 @@ import {
   createSearchTestFixtureUrlSafetyPolicy,
 } from "../src/features/search-test/fixtures.server.ts";
 import {
+  getResearchReportDashboardOperation,
   getResearchReportOperation,
+  listResearchReportHistoryOperation,
   listResearchReportsOperation,
   runResearchOperation,
 } from "../src/features/research/operations.ts";
@@ -324,6 +326,88 @@ test("research memory proposal remains pending review and creates no active memo
     assert.equal(proposed[0].sourceType, "research_report");
     assert.equal(proposed[0].sourceCapabilityId, "capability.research");
     assert.equal(active.length, 0);
+  } finally {
+    fixture.close();
+  }
+});
+
+test("research history operations filter, paginate, summarize, and fail safely", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-research-history-");
+
+  try {
+    const proposalResult = await runResearchOperation(
+      fixture.state,
+      researchRequest({
+        question: "Which research finding should become pending workspace memory?",
+        memoryProposalMode: "propose",
+      }),
+    );
+    const warningResult = await runResearchOperation(
+      fixture.state,
+      researchRequest({
+        question: "How should PAP filter partial source warning history?",
+        focus: null,
+        timeRange: "all",
+        maxSources: 3,
+        maxSearchResults: 3,
+      }),
+    );
+    const pendingMemory = await listResearchReportHistoryOperation(fixture.state, {
+      workspaceId: workspaceAlphaId,
+      hasPendingMemoryProposal: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const warnings = await listResearchReportHistoryOperation(fixture.state, {
+      workspaceId: workspaceAlphaId,
+      status: "completed_with_warnings",
+      question: "partial source",
+      hasWarnings: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const paged = await listResearchReportHistoryOperation(fixture.state, {
+      workspaceId: workspaceAlphaId,
+      page: 2,
+      pageSize: 1,
+    });
+    const beta = await listResearchReportHistoryOperation(fixture.state, {
+      workspaceId: workspaceBetaId,
+      page: 1,
+      pageSize: 10,
+    });
+    const invalid = await listResearchReportHistoryOperation(fixture.state, {
+      workspaceId: workspaceAlphaId,
+      dateFrom: "2026-07-05",
+      dateTo: "2026-07-01",
+      page: 1,
+      pageSize: 10,
+    });
+    const dashboard = await getResearchReportDashboardOperation(fixture.state, {
+      workspaceId: workspaceAlphaId,
+    });
+
+    assert.equal(proposalResult.ok, true);
+    assert.equal(warningResult.ok, true);
+    assert.equal(pendingMemory.ok, true);
+    assert.deepEqual(pendingMemory.ok && pendingMemory.page.reports.map((report) => report.id), [
+      proposalResult.reportId,
+    ]);
+    assert.equal(pendingMemory.ok && pendingMemory.page.reports[0].pendingMemoryProposalCount, 1);
+    assert.equal(warnings.ok, true);
+    assert.deepEqual(warnings.ok && warnings.page.reports.map((report) => report.id), [
+      warningResult.reportId,
+    ]);
+    assert.equal(warnings.ok && warnings.page.reports[0].warningCount > 0, true);
+    assert.equal(paged.ok && paged.page.hasPreviousPage, true);
+    assert.equal(paged.ok && paged.page.hasNextPage, false);
+    assert.equal(beta.ok && beta.page.total, 0);
+    assert.equal(invalid.ok, false);
+    assert.equal(!invalid.ok && invalid.error.code, "RESEARCH_HISTORY_QUERY_INVALID");
+    assert.equal(dashboard.ok, true);
+    assert.equal(dashboard.ok && dashboard.summary.totalReportCount, 2);
+    assert.equal(dashboard.ok && dashboard.summary.pendingMemoryProposalReportCount, 1);
+    assert.equal(dashboard.ok && dashboard.summary.warningReportCount, 1);
   } finally {
     fixture.close();
   }

@@ -37,6 +37,10 @@ import {
   researchCandidateProvenanceSchema,
   researchErrorSchema,
   researchQueryPlanSchema,
+  researchReportDashboardSummarySchema,
+  researchReportHistoryPageSchema,
+  researchReportHistoryQuerySchema,
+  researchReportHistorySortSchema,
   researchReportSchema,
   researchReportStatusSchema,
   researchRequestSchema,
@@ -857,6 +861,82 @@ test("research report contracts reject invalid source, evidence, and citation li
     researchReportSchema.safeParse({ ...report, rawModelText: "hidden model output" }).success,
     false,
   );
+});
+
+test("research report history contracts normalize filters and validate summaries", () => {
+  const query = researchReportHistoryQuerySchema.parse({
+    workspaceId: "workspace_history",
+    status: "completed_with_warnings",
+    dateFrom: "2026-07-01",
+    dateTo: "2026-07-05",
+    question: "  local agents  ",
+    hasWarnings: true,
+    hasPendingMemoryProposal: false,
+    page: 2,
+    pageSize: 20,
+  });
+  const page = researchReportHistoryPageSchema.parse({
+    reports: [
+      {
+        id: "research_report_history",
+        executionId: "exec_research_history",
+        workspaceId: "workspace_history",
+        question: "How should PAP keep research visible?",
+        status: "completed_with_warnings",
+        sourceCount: 3,
+        warningCount: 1,
+        pendingMemoryProposalCount: 0,
+        createdAt: "2026-07-04T09:00:00.000Z",
+        updatedAt: "2026-07-04T09:02:00.000Z",
+        completedAt: "2026-07-04T09:03:00.000Z",
+        effectiveAt: "2026-07-04T09:03:00.000Z",
+      },
+    ],
+    filters: query,
+    page: query.page,
+    pageSize: query.pageSize,
+    total: 1,
+    hasNextPage: false,
+    hasPreviousPage: true,
+  });
+  const dashboard = researchReportDashboardSummarySchema.parse({
+    workspaceId: "workspace_history",
+    totalReportCount: 2,
+    statusCounts: {
+      pending: 0,
+      running: 0,
+      completed: 1,
+      completed_with_warnings: 1,
+      failed: 0,
+      cancelled: 0,
+    },
+    warningReportCount: 1,
+    pendingMemoryProposalReportCount: 0,
+    latestReportAt: "2026-07-04T09:03:00.000Z",
+  });
+
+  assert.equal(query.question, "local agents");
+  assert.equal(query.sort, "newest_completed_or_updated_first");
+  assert.equal(page.reports[0].sourceCount, 3);
+  assert.equal(dashboard.statusCounts.completed_with_warnings, 1);
+  assert.equal(
+    researchReportHistorySortSchema.parse("oldest_completed_or_updated_first"),
+    "oldest_completed_or_updated_first",
+  );
+  assert.equal(researchReportHistoryQuerySchema.parse({ question: "   " }).question, undefined);
+  assert.equal(
+    researchReportHistoryQuerySchema.safeParse({
+      dateFrom: "2026-07-05",
+      dateTo: "2026-07-01",
+    }).success,
+    false,
+  );
+  assert.equal(
+    researchReportHistoryQuerySchema.safeParse({ dateFrom: "2026-02-30" }).success,
+    false,
+  );
+  assert.equal(researchReportHistoryQuerySchema.safeParse({ page: 0 }).success, false);
+  assert.equal(researchReportHistoryQuerySchema.safeParse({ pageSize: 51 }).success, false);
 });
 
 test("extraction contracts validate bounded normalized documents and methods", () => {

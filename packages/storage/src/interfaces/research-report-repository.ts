@@ -4,6 +4,10 @@ import type {
   ResearchFinding,
   ResearchLimitation,
   ResearchReport,
+  ResearchReportDashboardQuery,
+  ResearchReportDashboardSummary,
+  ResearchReportHistoryPage,
+  ResearchReportHistoryQuery,
   ResearchReportId,
   ResearchReportListPage,
   ResearchReportStatus,
@@ -40,6 +44,10 @@ export type ListResearchReportsInput = {
   pageSize?: number;
 };
 
+export type ListResearchReportHistoryInput = ResearchReportHistoryQuery;
+
+export type GetResearchReportDashboardSummaryInput = ResearchReportDashboardQuery;
+
 export type UpdateResearchReportStatusInput = GetResearchReportByIdInput & {
   status: ResearchReportStatus;
   completedAt?: string | null;
@@ -61,6 +69,10 @@ export interface ResearchReportRepository {
   create(input: CreateResearchReportInput): Promise<ResearchReport>;
   getById(input: GetResearchReportByIdInput): Promise<ResearchReport | null>;
   list(input: ListResearchReportsInput): Promise<ResearchReportListPage>;
+  listHistory(input: ListResearchReportHistoryInput): Promise<ResearchReportHistoryPage>;
+  getDashboardSummary(
+    input: GetResearchReportDashboardSummaryInput,
+  ): Promise<ResearchReportDashboardSummary>;
   updateStatus(input: UpdateResearchReportStatusInput): Promise<ResearchReport>;
   replaceContent(input: ReplaceResearchReportContentInput): Promise<ResearchReport>;
 }

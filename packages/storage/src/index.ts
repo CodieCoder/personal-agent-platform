@@ -23,7 +23,9 @@ export type {
 } from "./interfaces/execution-trace-repository.js";
 export type {
   CreateResearchReportInput,
+  GetResearchReportDashboardSummaryInput,
   GetResearchReportByIdInput,
+  ListResearchReportHistoryInput,
   ListResearchReportsInput,
   ReplaceResearchReportContentInput,
   ResearchReportRepository,
