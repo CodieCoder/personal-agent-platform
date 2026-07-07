@@ -1,0 +1,6 @@
+{
+  "id": "skill.research",
+  "version": "0.1.0",
+  "entryFile": "SKILL.md",
+  "capabilityId": "capability.research"
+}

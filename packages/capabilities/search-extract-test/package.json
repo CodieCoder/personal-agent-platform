@@ -1,0 +1,31 @@
+{
+  "name": "@pap/capability-search-extract-test",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @pap/contracts build && pnpm --filter @pap/shared build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/contracts build && pnpm --filter @pap/shared build && tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint .",
+    "test": "pnpm run build && pnpm --filter @pap/runtime build && vitest run test/search-extract-test.test.mjs"
+  },
+  "dependencies": {
+    "@pap/contracts": "workspace:*",
+    "@pap/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@pap/runtime": "workspace:*"
+  }
+}

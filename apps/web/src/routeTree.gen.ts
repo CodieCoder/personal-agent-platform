@@ -10,19 +10,34 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspacesRouteImport } from './routes/workspaces'
+import { Route as SearchTestRouteImport } from './routes/search-test'
+import { Route as ResearchRouteImport } from './routes/research'
 import { Route as ModelTestRouteImport } from './routes/model-test'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as ExecutionsRouteImport } from './routes/executions'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces.$workspaceId'
+import { Route as ResearchHistoryRouteImport } from './routes/research.history'
+import { Route as ResearchReportIdRouteImport } from './routes/research.$reportId'
 import { Route as MemorySemanticRouteImport } from './routes/memory.semantic'
 import { Route as MemoryEpisodesRouteImport } from './routes/memory.episodes'
 import { Route as MemoryMemoryIdRouteImport } from './routes/memory.$memoryId'
 import { Route as ExecutionsExecutionIdRouteImport } from './routes/executions.$executionId'
+import { Route as WorkspacesWorkspaceIdResearchRouteImport } from './routes/workspaces.$workspaceId.research'
 
 const WorkspacesRoute = WorkspacesRouteImport.update({
   id: '/workspaces',
   path: '/workspaces',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchTestRoute = SearchTestRouteImport.update({
+  id: '/search-test',
+  path: '/search-test',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResearchRoute = ResearchRouteImport.update({
+  id: '/research',
+  path: '/research',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ModelTestRoute = ModelTestRouteImport.update({
@@ -50,6 +65,16 @@ const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
   path: '/$workspaceId',
   getParentRoute: () => WorkspacesRoute,
 } as any)
+const ResearchHistoryRoute = ResearchHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => ResearchRoute,
+} as any)
+const ResearchReportIdRoute = ResearchReportIdRouteImport.update({
+  id: '/$reportId',
+  path: '/$reportId',
+  getParentRoute: () => ResearchRoute,
+} as any)
 const MemorySemanticRoute = MemorySemanticRouteImport.update({
   id: '/semantic',
   path: '/semantic',
@@ -70,30 +95,46 @@ const ExecutionsExecutionIdRoute = ExecutionsExecutionIdRouteImport.update({
   path: '/$executionId',
   getParentRoute: () => ExecutionsRoute,
 } as any)
+const WorkspacesWorkspaceIdResearchRoute =
+  WorkspacesWorkspaceIdResearchRouteImport.update({
+    id: '/research',
+    path: '/research',
+    getParentRoute: () => WorkspacesWorkspaceIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/executions': typeof ExecutionsRouteWithChildren
   '/memory': typeof MemoryRouteWithChildren
   '/model-test': typeof ModelTestRoute
+  '/research': typeof ResearchRouteWithChildren
+  '/search-test': typeof SearchTestRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
   '/memory/$memoryId': typeof MemoryMemoryIdRoute
   '/memory/episodes': typeof MemoryEpisodesRoute
   '/memory/semantic': typeof MemorySemanticRoute
-  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
+  '/research/$reportId': typeof ResearchReportIdRoute
+  '/research/history': typeof ResearchHistoryRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/workspaces/$workspaceId/research': typeof WorkspacesWorkspaceIdResearchRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/executions': typeof ExecutionsRouteWithChildren
   '/memory': typeof MemoryRouteWithChildren
   '/model-test': typeof ModelTestRoute
+  '/research': typeof ResearchRouteWithChildren
+  '/search-test': typeof SearchTestRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
   '/memory/$memoryId': typeof MemoryMemoryIdRoute
   '/memory/episodes': typeof MemoryEpisodesRoute
   '/memory/semantic': typeof MemorySemanticRoute
-  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
+  '/research/$reportId': typeof ResearchReportIdRoute
+  '/research/history': typeof ResearchHistoryRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/workspaces/$workspaceId/research': typeof WorkspacesWorkspaceIdResearchRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -101,12 +142,17 @@ export interface FileRoutesById {
   '/executions': typeof ExecutionsRouteWithChildren
   '/memory': typeof MemoryRouteWithChildren
   '/model-test': typeof ModelTestRoute
+  '/research': typeof ResearchRouteWithChildren
+  '/search-test': typeof SearchTestRoute
   '/workspaces': typeof WorkspacesRouteWithChildren
   '/executions/$executionId': typeof ExecutionsExecutionIdRoute
   '/memory/$memoryId': typeof MemoryMemoryIdRoute
   '/memory/episodes': typeof MemoryEpisodesRoute
   '/memory/semantic': typeof MemorySemanticRoute
-  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRoute
+  '/research/$reportId': typeof ResearchReportIdRoute
+  '/research/history': typeof ResearchHistoryRoute
+  '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
+  '/workspaces/$workspaceId/research': typeof WorkspacesWorkspaceIdResearchRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -115,36 +161,51 @@ export interface FileRouteTypes {
     | '/executions'
     | '/memory'
     | '/model-test'
+    | '/research'
+    | '/search-test'
     | '/workspaces'
     | '/executions/$executionId'
     | '/memory/$memoryId'
     | '/memory/episodes'
     | '/memory/semantic'
+    | '/research/$reportId'
+    | '/research/history'
     | '/workspaces/$workspaceId'
+    | '/workspaces/$workspaceId/research'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/executions'
     | '/memory'
     | '/model-test'
+    | '/research'
+    | '/search-test'
     | '/workspaces'
     | '/executions/$executionId'
     | '/memory/$memoryId'
     | '/memory/episodes'
     | '/memory/semantic'
+    | '/research/$reportId'
+    | '/research/history'
     | '/workspaces/$workspaceId'
+    | '/workspaces/$workspaceId/research'
   id:
     | '__root__'
     | '/'
     | '/executions'
     | '/memory'
     | '/model-test'
+    | '/research'
+    | '/search-test'
     | '/workspaces'
     | '/executions/$executionId'
     | '/memory/$memoryId'
     | '/memory/episodes'
     | '/memory/semantic'
+    | '/research/$reportId'
+    | '/research/history'
     | '/workspaces/$workspaceId'
+    | '/workspaces/$workspaceId/research'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -152,6 +213,8 @@ export interface RootRouteChildren {
   ExecutionsRoute: typeof ExecutionsRouteWithChildren
   MemoryRoute: typeof MemoryRouteWithChildren
   ModelTestRoute: typeof ModelTestRoute
+  ResearchRoute: typeof ResearchRouteWithChildren
+  SearchTestRoute: typeof SearchTestRoute
   WorkspacesRoute: typeof WorkspacesRouteWithChildren
 }
 
@@ -162,6 +225,20 @@ declare module '@tanstack/react-router' {
       path: '/workspaces'
       fullPath: '/workspaces'
       preLoaderRoute: typeof WorkspacesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search-test': {
+      id: '/search-test'
+      path: '/search-test'
+      fullPath: '/search-test'
+      preLoaderRoute: typeof SearchTestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/research': {
+      id: '/research'
+      path: '/research'
+      fullPath: '/research'
+      preLoaderRoute: typeof ResearchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/model-test': {
@@ -199,6 +276,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspacesWorkspaceIdRouteImport
       parentRoute: typeof WorkspacesRoute
     }
+    '/research/history': {
+      id: '/research/history'
+      path: '/history'
+      fullPath: '/research/history'
+      preLoaderRoute: typeof ResearchHistoryRouteImport
+      parentRoute: typeof ResearchRoute
+    }
+    '/research/$reportId': {
+      id: '/research/$reportId'
+      path: '/$reportId'
+      fullPath: '/research/$reportId'
+      preLoaderRoute: typeof ResearchReportIdRouteImport
+      parentRoute: typeof ResearchRoute
+    }
     '/memory/semantic': {
       id: '/memory/semantic'
       path: '/semantic'
@@ -226,6 +317,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/executions/$executionId'
       preLoaderRoute: typeof ExecutionsExecutionIdRouteImport
       parentRoute: typeof ExecutionsRoute
+    }
+    '/workspaces/$workspaceId/research': {
+      id: '/workspaces/$workspaceId/research'
+      path: '/research'
+      fullPath: '/workspaces/$workspaceId/research'
+      preLoaderRoute: typeof WorkspacesWorkspaceIdResearchRouteImport
+      parentRoute: typeof WorkspacesWorkspaceIdRoute
     }
   }
 }
@@ -257,12 +355,39 @@ const MemoryRouteChildren: MemoryRouteChildren = {
 const MemoryRouteWithChildren =
   MemoryRoute._addFileChildren(MemoryRouteChildren)
 
+interface ResearchRouteChildren {
+  ResearchReportIdRoute: typeof ResearchReportIdRoute
+  ResearchHistoryRoute: typeof ResearchHistoryRoute
+}
+
+const ResearchRouteChildren: ResearchRouteChildren = {
+  ResearchReportIdRoute: ResearchReportIdRoute,
+  ResearchHistoryRoute: ResearchHistoryRoute,
+}
+
+const ResearchRouteWithChildren = ResearchRoute._addFileChildren(
+  ResearchRouteChildren,
+)
+
+interface WorkspacesWorkspaceIdRouteChildren {
+  WorkspacesWorkspaceIdResearchRoute: typeof WorkspacesWorkspaceIdResearchRoute
+}
+
+const WorkspacesWorkspaceIdRouteChildren: WorkspacesWorkspaceIdRouteChildren = {
+  WorkspacesWorkspaceIdResearchRoute: WorkspacesWorkspaceIdResearchRoute,
+}
+
+const WorkspacesWorkspaceIdRouteWithChildren =
+  WorkspacesWorkspaceIdRoute._addFileChildren(
+    WorkspacesWorkspaceIdRouteChildren,
+  )
+
 interface WorkspacesRouteChildren {
-  WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRoute
+  WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRouteWithChildren
 }
 
 const WorkspacesRouteChildren: WorkspacesRouteChildren = {
-  WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRoute,
+  WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRouteWithChildren,
 }
 
 const WorkspacesRouteWithChildren = WorkspacesRoute._addFileChildren(
@@ -274,6 +399,8 @@ const rootRouteChildren: RootRouteChildren = {
   ExecutionsRoute: ExecutionsRouteWithChildren,
   MemoryRoute: MemoryRouteWithChildren,
   ModelTestRoute: ModelTestRoute,
+  ResearchRoute: ResearchRouteWithChildren,
+  SearchTestRoute: SearchTestRoute,
   WorkspacesRoute: WorkspacesRouteWithChildren,
 }
 export const routeTree = rootRouteImport

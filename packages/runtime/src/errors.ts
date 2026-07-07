@@ -1,4 +1,4 @@
-import { parsePlatformError, type PlatformError, type PlatformErrorCategory } from "@pap/contracts";
+import { type PlatformError, type PlatformErrorCategory, parsePlatformError } from "@pap/contracts";
 import { serializeError } from "@pap/shared";
 
 export const runtimeErrorCodes = {
@@ -10,6 +10,13 @@ export const runtimeErrorCodes = {
   runtimeFeatureUnavailable: "RUNTIME_FEATURE_UNAVAILABLE",
   memoryPermissionDenied: "CAPABILITY_MEMORY_PERMISSION_DENIED",
   llmPermissionDenied: "CAPABILITY_LLM_PERMISSION_DENIED",
+  webSearchPermissionDenied: "CAPABILITY_WEB_SEARCH_PERMISSION_DENIED",
+  webFetchPermissionDenied: "CAPABILITY_WEB_FETCH_PERMISSION_DENIED",
+  webEvidencePermissionDenied: "CAPABILITY_WEB_EVIDENCE_PERMISSION_DENIED",
+  webSearchFailed: "WEB_SEARCH_FAILED",
+  webFetchFailed: "WEB_FETCH_FAILED",
+  webExtractionFailed: "WEB_EXTRACTION_FAILED",
+  webEvidencePersistenceFailed: "WEB_EVIDENCE_PERSISTENCE_FAILED",
   aiProviderNotFound: "AI_PROVIDER_NOT_FOUND",
   aiProviderUnavailable: "AI_PROVIDER_UNAVAILABLE",
   aiProviderTimeout: "AI_PROVIDER_TIMEOUT",

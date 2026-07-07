@@ -12,7 +12,9 @@
     { "path": "../shared" },
     { "path": "../storage" },
     { "path": "../memory" },
-    { "path": "../tools-search" }
+    { "path": "../tools-search" },
+    { "path": "../tools-web" },
+    { "path": "../source-profiles" }
   ],
   "include": ["src/**/*.ts"]
 }

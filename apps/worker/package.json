@@ -9,24 +9,27 @@
     "dist"
   ],
   "scripts": {
-    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsx src/index.ts",
+    "dev": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-search-extract-test build && tsx src/index.ts",
     "start": "node dist/index.js",
     "health": "pnpm run build && node dist/health.js",
-    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc -b tsconfig.json",
-    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && tsc --noEmit -p tsconfig.json",
+    "build": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-search-extract-test build && tsc -b tsconfig.json",
+    "typecheck": "pnpm --filter @pap/storage-sqlite build && pnpm --filter @pap/ai-ollama build && pnpm --filter @pap/tools-search-searxng build && pnpm --filter @pap/tools-web build && pnpm --filter @pap/source-profiles build && pnpm --filter @pap/runtime build && pnpm --filter @pap/capability-echo build && pnpm --filter @pap/capability-local-model-test build && pnpm --filter @pap/capability-search-extract-test build && tsc --noEmit -p tsconfig.json",
     "lint": "biome lint ."
   },
   "dependencies": {
     "@pap/ai-ollama": "workspace:*",
     "@pap/capability-echo": "workspace:*",
     "@pap/capability-local-model-test": "workspace:*",
+    "@pap/capability-search-extract-test": "workspace:*",
     "@pap/contracts": "workspace:*",
     "@pap/memory": "workspace:*",
     "@pap/runtime": "workspace:*",
     "@pap/shared": "workspace:*",
+    "@pap/source-profiles": "workspace:*",
     "@pap/storage": "workspace:*",
     "@pap/storage-sqlite": "workspace:*",
-    "@pap/tools-search-searxng": "workspace:*"
+    "@pap/tools-search-searxng": "workspace:*",
+    "@pap/tools-web": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.22.4"

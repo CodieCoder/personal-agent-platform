@@ -1,0 +1,36 @@
+{
+  "name": "@pap/capability-research",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
+  "scripts": {
+    "build": "pnpm --filter @pap/contracts build && pnpm --filter @pap/shared build && pnpm --filter @pap/storage build && pnpm --filter @pap/memory build && pnpm --filter @pap/research build && tsc -b tsconfig.json",
+    "typecheck": "pnpm run build && tsc --noEmit -p tsconfig.json",
+    "lint": "biome lint .",
+    "test": "pnpm run build && pnpm --filter @pap/runtime build && pnpm --filter @pap/storage-sqlite build && vitest run test/research-capability.test.mjs"
+  },
+  "dependencies": {
+    "@pap/contracts": "workspace:*",
+    "@pap/memory": "workspace:*",
+    "@pap/research": "workspace:*",
+    "@pap/shared": "workspace:*",
+    "@pap/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@pap/runtime": "workspace:*",
+    "@pap/storage-sqlite": "workspace:*",
+    "@pap/testing": "workspace:*"
+  }
+}

@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
 import { echoCapability } from "@pap/capability-echo";
 import { z } from "@pap/contracts";
 import { createRuntime } from "@pap/runtime";
 import { createExecutionId, createTraceStepId, nowIso } from "@pap/shared";
 import { createTemporarySqliteDatabase } from "@pap/testing";
+import { test } from "vitest";
 import {
   createSqliteDatabase,
   runMigrations,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteResearchReportRepository,
+  SqliteResearchSourceRepository,
   SqliteSemanticMemoryRepository,
+  SqliteSourceProfileRepository,
+  SqliteWebEvidenceRepository,
   SqliteWorkspaceRepository,
 } from "../dist/index.js";
 
@@ -80,6 +84,841 @@ test("SqliteWorkspaceRepository creates, gets, lists, updates, and archives work
       "workspace_beta",
     ]);
     assert.equal((await workspaceRepository.getById("workspace_alpha"))?.name, "Alpha Updated");
+  } finally {
+    close();
+  }
+});
+
+test("SqliteSourceProfileRepository creates, matches, updates, lists, and archives profiles", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-source-profile-");
+  const { sourceProfileRepository, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    const news = await sourceProfileRepository.create({
+      id: "source_profile_news",
+      domain: "News.Example.COM.",
+      name: "  News Example  ",
+      articleContainerSelector: "main.article",
+      contentSelector: ".body",
+      titleSelector: "h1",
+      createdAt: "2026-07-03T09:00:00.000Z",
+    });
+    const blog = await sourceProfileRepository.create({
+      id: "source_profile_blog",
+      domain: "blog.example.com",
+      name: "Blog Example",
+      contentSelector: "article",
+      createdAt: "2026-07-03T10:00:00.000Z",
+    });
+    const updated = await sourceProfileRepository.update({
+      id: news.id,
+      name: "News Example Updated",
+      notes: "Manual selector profile.",
+      updatedAt: "2026-07-03T11:00:00.000Z",
+    });
+    const matched = await sourceProfileRepository.getActiveByDomain("NEWS.EXAMPLE.COM.");
+    const archived = await sourceProfileRepository.archive({
+      id: blog.id,
+      archivedAt: "2026-07-03T12:00:00.000Z",
+    });
+    const active = await sourceProfileRepository.list();
+    const all = await sourceProfileRepository.list({ includeArchived: true });
+
+    assert.equal(news.domain, "news.example.com");
+    assert.equal(news.name, "News Example");
+    assert.equal(updated.notes, "Manual selector profile.");
+    assert.equal(matched?.id, news.id);
+    assert.equal(archived.status, "archived");
+    assert.equal(archived.archivedAt, "2026-07-03T12:00:00.000Z");
+    assert.deepEqual(
+      active.map((profile) => profile.id),
+      [news.id],
+    );
+    assert.deepEqual(all.map((profile) => profile.id).sort(), [blog.id, news.id]);
+
+    await assert.rejects(
+      sourceProfileRepository.create({
+        id: "source_profile_duplicate",
+        domain: "news.example.com",
+        name: "Duplicate",
+        contentSelector: "article",
+      }),
+      /UNIQUE constraint failed/u,
+    );
+  } finally {
+    close();
+  }
+});
+
+test("SqliteWebEvidenceRepository persists bounded execution evidence with workspace isolation", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-web-evidence-");
+  const { traceRepository, webEvidenceRepository, connection, close } = createMigratedRepositories(
+    temporaryDatabase.databaseUrl,
+  );
+
+  try {
+    await traceRepository.create({
+      id: "exec_web_alpha",
+      capabilityId: "capability.search-extract-test",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-07-03T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_web_beta",
+      capabilityId: "capability.search-extract-test",
+      workspaceId: "workspace_beta",
+      startedAt: "2026-07-03T09:00:00.000Z",
+    });
+
+    const search = await webEvidenceRepository.createSearch({
+      id: "web_search_alpha",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      providerId: "provider.searxng",
+      query: "local agents",
+      request: {
+        query: "local agents",
+        page: null,
+        pageSize: 10,
+        language: null,
+        safesearch: null,
+        categories: null,
+        timeRange: null,
+        providerId: "provider.searxng",
+      },
+      status: "completed",
+      resultCount: 1,
+      results: [searchResultFixture()],
+      warnings: [],
+      startedAt: "2026-07-03T09:00:00.000Z",
+      completedAt: "2026-07-03T09:00:00.100Z",
+      durationMs: 100,
+      createdAt: "2026-07-03T09:00:00.120Z",
+    });
+    const fetch = await webEvidenceRepository.createFetch({
+      id: "web_fetch_alpha",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      searchEvidenceId: search.id,
+      selectedUrlSource: "search_result",
+      selectedResultIndex: 0,
+      requestedUrl: "https://example.com/article",
+      finalUrl: "https://example.com/article",
+      status: "completed",
+      statusCode: 200,
+      contentType: "text/html",
+      contentLength: 1_024,
+      contentBytes: 1_024,
+      bodySha256: "a".repeat(64),
+      redirects: [],
+      warnings: [],
+      startedAt: "2026-07-03T09:00:00.200Z",
+      completedAt: "2026-07-03T09:00:00.350Z",
+      durationMs: 150,
+      createdAt: "2026-07-03T09:00:00.360Z",
+    });
+    const extraction = await webEvidenceRepository.createExtraction({
+      id: "web_extraction_alpha",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      fetchEvidenceId: fetch.id,
+      finalUrl: "https://example.com/article",
+      status: "completed",
+      extractionMethod: "readability",
+      sourceProfileId: null,
+      title: "Local agents",
+      siteName: "Example",
+      canonicalUrl: "https://example.com/article",
+      excerpt: "Readable content.",
+      wordCount: 3,
+      contentTextSnapshot: "Readable content snapshot.",
+      contentTextSha256: "b".repeat(64),
+      contentChars: 26,
+      originalContentChars: 2_048,
+      warnings: [],
+      startedAt: "2026-07-03T09:00:00.400Z",
+      completedAt: "2026-07-03T09:00:00.450Z",
+      durationMs: 50,
+      createdAt: "2026-07-03T09:00:00.460Z",
+    });
+    const failedFetch = await webEvidenceRepository.createFetch({
+      id: "web_fetch_alpha_failed",
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+      searchEvidenceId: search.id,
+      selectedUrlSource: "search_result",
+      selectedResultIndex: 0,
+      requestedUrl: "https://example.com/article",
+      finalUrl: null,
+      status: "failed",
+      statusCode: null,
+      contentType: null,
+      contentLength: null,
+      contentBytes: null,
+      bodySha256: null,
+      redirects: [],
+      warnings: [],
+      failureCategory: "fetch_url_blocked",
+      failureMessage: "Fetch URL is blocked by URL safety policy.",
+      startedAt: "2026-07-03T09:01:00.000Z",
+      completedAt: "2026-07-03T09:01:00.010Z",
+      durationMs: 10,
+      createdAt: "2026-07-03T09:01:00.020Z",
+    });
+
+    const alpha = await webEvidenceRepository.getByExecution({
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_alpha",
+    });
+    const betaScoped = await webEvidenceRepository.getByExecution({
+      executionId: "exec_web_alpha",
+      workspaceId: "workspace_beta",
+    });
+    const fetchColumns = connection.sqlite
+      .prepare("PRAGMA table_info(web_fetch_evidence)")
+      .all()
+      .map((row) => row.name);
+    const extractionColumns = connection.sqlite
+      .prepare("PRAGMA table_info(web_extraction_evidence)")
+      .all()
+      .map((row) => row.name);
+    const serialized = JSON.stringify(alpha);
+
+    assert.equal(search.expiresAt, "2026-08-02T09:00:00.120Z");
+    assert.equal(fetch.bodySha256, "a".repeat(64));
+    assert.equal(extraction.contentTextSnapshot, "Readable content snapshot.");
+    assert.equal(failedFetch.failureCategory, "fetch_url_blocked");
+    assert.deepEqual(
+      alpha.fetches.map((evidence) => evidence.id),
+      ["web_fetch_alpha", "web_fetch_alpha_failed"],
+    );
+    assert.deepEqual(betaScoped, { searches: [], fetches: [], extractions: [] });
+    assert.equal(serialized.includes("<html"), false);
+    assert.equal(serialized.toLowerCase().includes("authorization"), false);
+    assert.equal(serialized.toLowerCase().includes("cookie"), false);
+    assert.equal(fetchColumns.includes("html"), false);
+    assert.equal(fetchColumns.includes("headers_json"), false);
+    assert.equal(extractionColumns.includes("content_html"), false);
+
+    await assert.rejects(
+      webEvidenceRepository.createSearch({
+        executionId: "exec_web_alpha",
+        workspaceId: "workspace_beta",
+        providerId: "provider.searxng",
+        query: "wrong workspace",
+        request: {
+          query: "wrong workspace",
+          page: null,
+          pageSize: 10,
+          language: null,
+          safesearch: null,
+          categories: null,
+          timeRange: null,
+          providerId: "provider.searxng",
+        },
+        status: "completed",
+        resultCount: 0,
+        results: [],
+        startedAt: "2026-07-03T09:02:00.000Z",
+        completedAt: "2026-07-03T09:02:00.010Z",
+        durationMs: 10,
+      }),
+      /workspace mismatch/u,
+    );
+  } finally {
+    close();
+  }
+});
+
+test("SqliteResearch repositories persist reports, sources, analyses, citations, and filters", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-research-");
+  const {
+    traceRepository,
+    webEvidenceRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    connection,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await traceRepository.create({
+      id: "exec_research_alpha",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_research_unscoped",
+      capabilityId: "capability.research",
+      startedAt: "2026-07-04T09:30:00.000Z",
+    });
+
+    const extraction = await webEvidenceRepository.createExtraction(
+      extractionEvidenceInput({
+        id: "web_extraction_research_alpha",
+        executionId: "exec_research_alpha",
+        workspaceId: "workspace_alpha",
+        finalUrl: "https://example.com/research",
+      }),
+    );
+    const report = await researchReportRepository.create({
+      id: "research_report_alpha",
+      executionId: "exec_research_alpha",
+      workspaceId: "workspace_alpha",
+      question: "What changed in local-first agent research?",
+      summary: researchSummaryFixture("Initial report shell."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+    const source = await researchSourceRepository.create({
+      id: "research_source_alpha",
+      reportId: report.id,
+      executionId: report.executionId,
+      workspaceId: report.workspaceId,
+      evidenceId: extraction.id,
+      url: "https://example.com/research",
+      finalUrl: "https://example.com/research",
+      title: "Local-first agent research",
+      selectionRank: 1,
+      status: "extracted",
+      createdAt: "2026-07-04T09:02:00.000Z",
+    });
+    const completed = await researchReportRepository.replaceContent({
+      id: report.id,
+      workspaceId: "workspace_alpha",
+      ...researchReportContentFixture(source),
+      status: "completed",
+      updatedAt: "2026-07-04T09:04:00.100Z",
+    });
+    const analyzed = await researchSourceRepository.updateAnalysis({
+      id: source.id,
+      workspaceId: "workspace_alpha",
+      analysis: researchAnalysisFixture(source),
+      citationIds: ["research_citation_alpha"],
+      updatedAt: "2026-07-04T09:05:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_unscoped",
+      executionId: "exec_research_unscoped",
+      workspaceId: null,
+      question: "Unscoped research?",
+      summary: researchSummaryFixture("Unscoped report shell."),
+      createdAt: "2026-07-04T09:31:00.000Z",
+    });
+
+    const fetched = await researchReportRepository.getById({
+      id: report.id,
+      workspaceId: "workspace_alpha",
+    });
+    const alphaReports = await researchReportRepository.list({ workspaceId: "workspace_alpha" });
+    const executionReports = await researchReportRepository.list({
+      workspaceId: "workspace_alpha",
+      executionId: "exec_research_alpha",
+    });
+    const unscopedReports = await researchReportRepository.list({ workspaceId: null });
+    const wrongWorkspaceReports = await researchReportRepository.list({
+      workspaceId: "workspace_beta",
+      executionId: "exec_research_alpha",
+    });
+    const sourcesByReport = await researchSourceRepository.listByReport({
+      reportId: report.id,
+      workspaceId: "workspace_alpha",
+    });
+    const sourcesByExecution = await researchSourceRepository.listByExecution({
+      executionId: "exec_research_alpha",
+      workspaceId: "workspace_alpha",
+    });
+    const reportColumns = connection.sqlite
+      .prepare("PRAGMA table_info(research_reports)")
+      .all()
+      .map((row) => row.name);
+    const sourceColumns = connection.sqlite
+      .prepare("PRAGMA table_info(research_sources)")
+      .all()
+      .map((row) => row.name);
+    assert.throws(
+      () =>
+        connection.sqlite
+          .prepare("DELETE FROM web_extraction_evidence WHERE id = ?")
+          .run(extraction.id),
+      /FOREIGN KEY constraint failed/u,
+    );
+    const fetchedAfterEvidencePurgeAttempt = await researchReportRepository.getById({
+      id: report.id,
+      workspaceId: "workspace_alpha",
+    });
+    const serialized = JSON.stringify(fetched);
+
+    assert.equal(completed.status, "completed");
+    assert.equal(typeof completed.completedAt, "string");
+    assert.equal(analyzed.status, "analyzed");
+    assert.equal(analyzed.analysis.evidenceId, extraction.id);
+    assert.equal(fetched.citations[0].evidenceId, extraction.id);
+    assert.equal(fetchedAfterEvidencePurgeAttempt.sources[0].evidenceId, extraction.id);
+    assert.deepEqual(
+      fetched.sources.map((item) => item.citationIds),
+      [["research_citation_alpha"]],
+    );
+    assert.deepEqual(
+      alphaReports.reports.map((item) => item.id),
+      [report.id],
+    );
+    assert.deepEqual(
+      executionReports.reports.map((item) => item.id),
+      [report.id],
+    );
+    assert.deepEqual(
+      unscopedReports.reports.map((item) => item.id),
+      ["research_report_unscoped"],
+    );
+    assert.deepEqual(wrongWorkspaceReports.reports, []);
+    assert.deepEqual(
+      sourcesByReport.map((item) => item.id),
+      [source.id],
+    );
+    assert.deepEqual(
+      sourcesByExecution.map((item) => item.id),
+      [source.id],
+    );
+    assert.equal(serialized.includes("<html"), false);
+    assert.equal(serialized.toLowerCase().includes("authorization"), false);
+    assert.equal(serialized.toLowerCase().includes("systemprompt"), false);
+    assert.equal(serialized.toLowerCase().includes("reasoning"), false);
+    assert.equal(reportColumns.includes("raw_html"), false);
+    assert.equal(reportColumns.includes("prompt"), false);
+    assert.equal(sourceColumns.includes("html"), false);
+    assert.equal(sourceColumns.includes("raw_model_output"), false);
+
+    assert.doesNotThrow(() =>
+      connection.sqlite
+        .prepare("DELETE FROM execution_traces WHERE id = ?")
+        .run("exec_research_alpha"),
+    );
+    assert.equal(
+      connection.sqlite
+        .prepare("SELECT COUNT(*) AS total FROM research_sources WHERE execution_id = ?")
+        .get("exec_research_alpha").total,
+      0,
+    );
+    assert.equal(
+      connection.sqlite
+        .prepare("SELECT COUNT(*) AS total FROM web_extraction_evidence WHERE execution_id = ?")
+        .get("exec_research_alpha").total,
+      0,
+    );
+  } finally {
+    close();
+  }
+});
+
+test("SqliteResearchReportRepository lists workspace-scoped history summaries", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-research-history-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    semanticMemoryRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_history_alpha", name: "History Alpha" });
+    await workspaceRepository.create({ id: "workspace_history_beta", name: "History Beta" });
+    await traceRepository.create({
+      id: "exec_history_alpha_old",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_alpha",
+      startedAt: "2026-07-01T08:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_alpha_warning",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_alpha",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_alpha_pending",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_alpha",
+      startedAt: "2026-07-05T10:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_beta_warning",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_history_beta",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_history_unscoped",
+      capabilityId: "capability.research",
+      startedAt: "2026-07-06T09:00:00.000Z",
+    });
+
+    const oldReport = await researchReportRepository.create({
+      id: "research_report_history_old",
+      executionId: "exec_history_alpha_old",
+      workspaceId: "workspace_history_alpha",
+      question: "How did earlier research behave?",
+      summary: researchSummaryFixture("Older report."),
+      status: "completed",
+      createdAt: "2026-07-01T08:01:00.000Z",
+      completedAt: "2026-07-01T08:02:00.000Z",
+    });
+    const warningReport = await researchReportRepository.create({
+      id: "research_report_history_warning",
+      executionId: "exec_history_alpha_warning",
+      workspaceId: "workspace_history_alpha",
+      question: "How should local AI research warnings be reviewed?",
+      summary: researchSummaryFixture("Warning report."),
+      warnings: [
+        {
+          code: "partial_source_failure",
+          message: "One source could not be fetched.",
+        },
+      ],
+      status: "completed_with_warnings",
+      createdAt: "2026-07-04T09:01:00.000Z",
+      completedAt: "2026-07-04T09:05:00.000Z",
+    });
+    const pendingReport = await researchReportRepository.create({
+      id: "research_report_history_pending",
+      executionId: "exec_history_alpha_pending",
+      workspaceId: "workspace_history_alpha",
+      question: "What research is still running?",
+      summary: researchSummaryFixture("Pending report."),
+      status: "running",
+      createdAt: "2026-07-05T10:01:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_history_beta",
+      executionId: "exec_history_beta_warning",
+      workspaceId: "workspace_history_beta",
+      question: "How should local AI research warnings be reviewed?",
+      summary: researchSummaryFixture("Beta report."),
+      warnings: [
+        {
+          code: "partial_source_failure",
+          message: "Beta warning should stay isolated.",
+        },
+      ],
+      status: "completed_with_warnings",
+      createdAt: "2026-07-04T09:01:00.000Z",
+      completedAt: "2026-07-04T09:06:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_history_unscoped",
+      executionId: "exec_history_unscoped",
+      workspaceId: null,
+      question: "Unscoped report should stay unscoped.",
+      summary: researchSummaryFixture("Unscoped report."),
+      status: "completed",
+      createdAt: "2026-07-06T09:01:00.000Z",
+      completedAt: "2026-07-06T09:02:00.000Z",
+    });
+
+    await researchSourceRepository.create({
+      id: "research_source_history_warning_a",
+      reportId: warningReport.id,
+      executionId: warningReport.executionId,
+      workspaceId: warningReport.workspaceId,
+      url: "https://example.com/history-a",
+      title: "History warning A",
+      selectionRank: 1,
+      status: "fetch_failed",
+    });
+    await researchSourceRepository.create({
+      id: "research_source_history_warning_b",
+      reportId: warningReport.id,
+      executionId: warningReport.executionId,
+      workspaceId: warningReport.workspaceId,
+      url: "https://example.com/history-b",
+      title: "History warning B",
+      selectionRank: 2,
+      status: "fetch_failed",
+    });
+    await researchSourceRepository.create({
+      id: "research_source_history_old",
+      reportId: oldReport.id,
+      executionId: oldReport.executionId,
+      workspaceId: oldReport.workspaceId,
+      url: "https://example.com/history-old",
+      title: "History old",
+      selectionRank: 1,
+      status: "fetch_failed",
+    });
+    await semanticMemoryRepository.create({
+      id: "memory_history_proposal",
+      scope: "workspace",
+      workspaceId: "workspace_history_alpha",
+      subject: "research.local_ai",
+      predicate: "found",
+      value: "Local AI warning report has a pending proposal.",
+      status: "proposed",
+      sourceType: "research_report",
+      sourceExecutionId: warningReport.executionId,
+      sourceCapabilityId: "capability.research",
+    });
+
+    const newest = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      page: 1,
+      pageSize: 10,
+    });
+    const warnings = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      hasWarnings: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const pendingMemory = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      hasPendingMemoryProposal: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const questionFiltered = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      question: "LOCAL ai",
+      dateFrom: "2026-07-04",
+      dateTo: "2026-07-04",
+      page: 1,
+      pageSize: 10,
+    });
+    const paged = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_alpha",
+      page: 2,
+      pageSize: 1,
+    });
+    const beta = await researchReportRepository.listHistory({
+      workspaceId: "workspace_history_beta",
+      hasPendingMemoryProposal: true,
+      page: 1,
+      pageSize: 10,
+    });
+    const unscoped = await researchReportRepository.listHistory({
+      workspaceId: null,
+      page: 1,
+      pageSize: 10,
+    });
+    const dashboard = await researchReportRepository.getDashboardSummary({
+      workspaceId: "workspace_history_alpha",
+    });
+
+    assert.deepEqual(
+      newest.reports.map((report) => report.id),
+      [pendingReport.id, warningReport.id, oldReport.id],
+    );
+    assert.deepEqual(
+      warnings.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.equal(warnings.reports[0].sourceCount, 2);
+    assert.equal(warnings.reports[0].warningCount, 1);
+    assert.equal(warnings.reports[0].pendingMemoryProposalCount, 1);
+    assert.deepEqual(
+      pendingMemory.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.deepEqual(
+      questionFiltered.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.deepEqual(
+      paged.reports.map((report) => report.id),
+      [warningReport.id],
+    );
+    assert.equal(paged.hasPreviousPage, true);
+    assert.equal(paged.hasNextPage, true);
+    assert.deepEqual(beta.reports, []);
+    assert.deepEqual(
+      unscoped.reports.map((report) => report.id),
+      ["research_report_history_unscoped"],
+    );
+    assert.equal(dashboard.totalReportCount, 3);
+    assert.equal(dashboard.statusCounts.completed_with_warnings, 1);
+    assert.equal(dashboard.warningReportCount, 1);
+    assert.equal(dashboard.pendingMemoryProposalReportCount, 1);
+    assert.equal(dashboard.latestReportAt, "2026-07-05T10:01:00.000Z");
+  } finally {
+    close();
+  }
+});
+
+test("SqliteResearch repositories reject invalid linkage and roll back content updates", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-research-invalid-");
+  const {
+    traceRepository,
+    webEvidenceRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await traceRepository.create({
+      id: "exec_research_invalid_alpha",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_alpha",
+      startedAt: "2026-07-04T10:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_research_invalid_beta",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_beta",
+      startedAt: "2026-07-04T10:00:00.000Z",
+    });
+
+    const alphaExtraction = await webEvidenceRepository.createExtraction(
+      extractionEvidenceInput({
+        id: "web_extraction_research_invalid_alpha",
+        executionId: "exec_research_invalid_alpha",
+        workspaceId: "workspace_alpha",
+        finalUrl: "https://example.com/alpha",
+      }),
+    );
+    const betaExtraction = await webEvidenceRepository.createExtraction(
+      extractionEvidenceInput({
+        id: "web_extraction_research_invalid_beta",
+        executionId: "exec_research_invalid_beta",
+        workspaceId: "workspace_beta",
+        finalUrl: "https://example.com/beta",
+      }),
+    );
+    const report = await researchReportRepository.create({
+      id: "research_report_invalid_alpha",
+      executionId: "exec_research_invalid_alpha",
+      workspaceId: "workspace_alpha",
+      question: "Validate research linkages?",
+      summary: researchSummaryFixture("Initial report shell."),
+      createdAt: "2026-07-04T10:01:00.000Z",
+    });
+    const source = await researchSourceRepository.create({
+      id: "research_source_invalid_alpha",
+      reportId: report.id,
+      executionId: report.executionId,
+      workspaceId: report.workspaceId,
+      evidenceId: alphaExtraction.id,
+      url: "https://example.com/alpha",
+      finalUrl: "https://example.com/alpha",
+      title: "Alpha research",
+      selectionRank: 1,
+      createdAt: "2026-07-04T10:02:00.000Z",
+    });
+    const diagnosticSource = await researchSourceRepository.create({
+      id: "research_source_diagnostic",
+      reportId: report.id,
+      executionId: report.executionId,
+      workspaceId: report.workspaceId,
+      evidenceId: null,
+      url: "https://example.com/diagnostic",
+      finalUrl: null,
+      title: "Diagnostic source",
+      status: "fetch_failed",
+      createdAt: "2026-07-04T10:03:00.000Z",
+    });
+
+    await assert.rejects(
+      researchReportRepository.create({
+        id: "research_report_wrong_workspace",
+        executionId: "exec_research_invalid_alpha",
+        workspaceId: "workspace_beta",
+        question: "Wrong workspace?",
+        summary: researchSummaryFixture("Wrong workspace."),
+      }),
+      /workspace mismatch/u,
+    );
+    await assert.rejects(
+      researchSourceRepository.create({
+        reportId: "research_report_missing",
+        executionId: report.executionId,
+        workspaceId: report.workspaceId,
+        url: "https://example.com/missing",
+      }),
+      /Research report not found/u,
+    );
+    await assert.rejects(
+      researchSourceRepository.create({
+        reportId: report.id,
+        executionId: "exec_research_invalid_beta",
+        workspaceId: "workspace_beta",
+        evidenceId: betaExtraction.id,
+        url: "https://example.com/beta",
+      }),
+      /linkage mismatch/u,
+    );
+    await assert.rejects(
+      researchSourceRepository.create({
+        reportId: report.id,
+        executionId: report.executionId,
+        workspaceId: report.workspaceId,
+        evidenceId: betaExtraction.id,
+        url: "https://example.com/beta",
+      }),
+      /evidence linkage mismatch/u,
+    );
+    await assert.rejects(
+      researchSourceRepository.create({
+        reportId: report.id,
+        executionId: report.executionId,
+        workspaceId: report.workspaceId,
+        evidenceId: "web_extraction_missing",
+        url: "https://example.com/missing-evidence",
+      }),
+      /evidence not found/u,
+    );
+    await assert.rejects(
+      researchSourceRepository.updateAnalysis({
+        id: source.id,
+        workspaceId: report.workspaceId,
+        analysis: {
+          ...researchAnalysisFixture(source),
+          evidenceId: betaExtraction.id,
+        },
+      }),
+      /evidence mismatch/u,
+    );
+    await assert.rejects(
+      researchReportRepository.replaceContent({
+        id: report.id,
+        workspaceId: report.workspaceId,
+        ...researchReportContentFixture(source, {
+          summaryText: "This invalid update should roll back.",
+          citation: { sourceId: "research_source_missing" },
+        }),
+        status: "completed",
+        completedAt: "2026-07-04T10:04:00.000Z",
+      }),
+      /known source ID/u,
+    );
+    await assert.rejects(
+      researchReportRepository.replaceContent({
+        id: report.id,
+        workspaceId: report.workspaceId,
+        ...researchReportContentFixture(diagnosticSource, {
+          summaryText: "Diagnostic source should not support citations.",
+          citation: {
+            sourceTitle: "Diagnostic source",
+            sourceUrl: "https://example.com/diagnostic",
+            evidenceId: alphaExtraction.id,
+          },
+        }),
+        status: "completed",
+        completedAt: "2026-07-04T10:05:00.000Z",
+      }),
+      /require sources with extraction evidence/u,
+    );
+
+    const unchanged = await researchReportRepository.getById({
+      id: report.id,
+      workspaceId: report.workspaceId,
+    });
+
+    assert.equal(unchanged.summary.text, "Initial report shell.");
+    assert.deepEqual(unchanged.findings, []);
+    assert.deepEqual(unchanged.citations, []);
   } finally {
     close();
   }
@@ -906,11 +1745,121 @@ function createMigratedRepositories(databaseUrl) {
   const connection = createSqliteDatabase({ databaseUrl });
 
   return {
+    connection,
     traceRepository: new SqliteExecutionTraceRepository(connection.db),
     workspaceRepository: new SqliteWorkspaceRepository(connection.db),
     semanticMemoryRepository: new SqliteSemanticMemoryRepository(connection.db),
     episodicMemoryRepository: new SqliteEpisodicMemoryRepository(connection.db),
+    sourceProfileRepository: new SqliteSourceProfileRepository(connection.db),
+    webEvidenceRepository: new SqliteWebEvidenceRepository(connection.db),
+    researchReportRepository: new SqliteResearchReportRepository(connection.db),
+    researchSourceRepository: new SqliteResearchSourceRepository(connection.db),
     close: connection.close,
+  };
+}
+
+function searchResultFixture() {
+  return {
+    title: "Local agents",
+    url: "https://example.com/article",
+    displayUrl: "example.com",
+    snippet: "A normalized result.",
+    publishedAt: null,
+    engine: "test",
+    category: "general",
+    score: null,
+  };
+}
+
+function extractionEvidenceInput(overrides) {
+  return {
+    executionId: overrides.executionId,
+    workspaceId: overrides.workspaceId,
+    id: overrides.id,
+    fetchEvidenceId: null,
+    finalUrl: overrides.finalUrl,
+    status: "completed",
+    extractionMethod: "readability",
+    sourceProfileId: null,
+    title: "Local-first agent research",
+    siteName: "Example",
+    canonicalUrl: overrides.finalUrl,
+    excerpt: "Readable source content.",
+    wordCount: 3,
+    contentTextSnapshot: "Readable source content.",
+    contentTextSha256: "c".repeat(64),
+    contentChars: 24,
+    originalContentChars: 1_024,
+    warnings: [],
+    startedAt: "2026-07-04T09:00:00.000Z",
+    completedAt: "2026-07-04T09:00:00.050Z",
+    durationMs: 50,
+    createdAt: "2026-07-04T09:00:00.060Z",
+  };
+}
+
+function researchSummaryFixture(text) {
+  return {
+    text,
+    keyPoints: ["Private, bounded research artifacts remain visible to the user."],
+  };
+}
+
+function researchReportContentFixture(source, overrides = {}) {
+  const citation = {
+    citationId: "research_citation_alpha",
+    sourceId: source.id,
+    sourceTitle: source.title,
+    sourceUrl: source.finalUrl ?? source.url,
+    evidenceId: source.evidenceId,
+    claimText: "Local-first research keeps source-backed evidence visible.",
+    sourceExcerpt: "Source-backed evidence remains visible.",
+    ...(overrides.citation ?? {}),
+  };
+
+  return {
+    summary: researchSummaryFixture(
+      overrides.summaryText ?? "Research report content with sourced findings.",
+    ),
+    findings: [
+      {
+        id: "research_finding_alpha",
+        title: "Evidence remains visible",
+        claimText: "Local-first research keeps source-backed evidence visible.",
+        citationIds: [citation.citationId],
+        confidence: 0.86,
+        kind: "sourced_fact",
+      },
+    ],
+    citations: [citation],
+    limitations: [
+      {
+        code: "limited_source_count",
+        message: "This integration test uses a single cited source.",
+      },
+    ],
+    warnings: [],
+  };
+}
+
+function researchAnalysisFixture(source) {
+  return {
+    sourceId: source.id,
+    evidenceId: source.evidenceId,
+    summary: "The source supports a bounded research finding.",
+    claims: [
+      {
+        claimId: "research_claim_alpha",
+        claimText: "Local-first research keeps source-backed evidence visible.",
+        sourceExcerpt: "Source-backed evidence remains visible.",
+        confidence: 0.9,
+      },
+    ],
+    caveats: [],
+    relevanceScore: 0.82,
+    confidence: 0.84,
+    warnings: [],
+    analyzedAt: "2026-07-04T09:05:00.000Z",
   };
 }
 

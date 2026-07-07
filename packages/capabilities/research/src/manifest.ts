@@ -1,0 +1,40 @@
+import { capabilityManifestSchema } from "@pap/contracts";
+
+export const researchCapabilityManifest = capabilityManifestSchema.parse({
+  id: "capability.research",
+  version: "0.1.0",
+  name: "Research",
+  description: "Runs a bounded, source-backed manual research workflow.",
+  skill: {
+    id: "skill.research",
+    version: "0.1.0",
+    path: "packages/capabilities/research/skills/research",
+    entryFile: "SKILL.md",
+  },
+  inputSchemaId: "research.request.v1",
+  outputSchemaId: "research.capability-output.v1",
+  allowedTools: [
+    "tool.search.searxng",
+    "tool.web.fetch",
+    "tool.web.extract",
+    "tool.web.evidence",
+    "tool.llm.structured",
+    "tool.memory.propose",
+  ],
+  allowedChildCapabilities: [],
+  supportedUiBlocks: [],
+  permissions: [
+    "workspace.read",
+    "memory.read",
+    "memory.write",
+    "web.search",
+    "web.fetch",
+    "web.evidence.write",
+    "llm.generate",
+  ],
+  sideEffects: ["none", "write"],
+  approvalPolicyId: "approval.research.default",
+  memoryPolicyId: "memory.research.default",
+  trustLevel: "core",
+  tags: ["research", "manual", "web"],
+});
