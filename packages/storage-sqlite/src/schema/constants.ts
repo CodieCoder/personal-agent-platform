@@ -48,3 +48,5 @@ export const researchSourceStatuses = [
   "analyzed",
   "excluded",
 ] as const;
+
+export const researchFeedbackRatings = ["useful", "neutral", "poor"] as const;

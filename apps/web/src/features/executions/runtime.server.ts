@@ -18,7 +18,9 @@ import { createSourceProfileService } from "@pap/source-profiles";
 import type {
   EpisodicMemoryRepository,
   ExecutionTraceRepository,
+  ResearchReportFeedbackRepository,
   ResearchReportRepository,
+  ResearchSourceFeedbackRepository,
   ResearchSourceRepository,
   SemanticMemoryRepository,
   SourceProfileRepository,
@@ -32,7 +34,9 @@ import {
   type SqliteDatabaseConnection,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteResearchReportFeedbackRepository,
   SqliteResearchReportRepository,
+  SqliteResearchSourceFeedbackRepository,
   SqliteResearchSourceRepository,
   SqliteSemanticMemoryRepository,
   SqliteSourceProfileRepository,
@@ -68,6 +72,8 @@ export type WebRuntimeState = {
   webEvidenceRepository: WebEvidenceRepository;
   researchReportRepository: ResearchReportRepository;
   researchSourceRepository: ResearchSourceRepository;
+  researchSourceFeedbackRepository: ResearchSourceFeedbackRepository;
+  researchReportFeedbackRepository: ResearchReportFeedbackRepository;
   memoryService: MemoryService;
   runtime: Runtime;
 };
@@ -95,6 +101,12 @@ export function getWebRuntimeState(): WebRuntimeState {
   const webEvidenceRepository = new SqliteWebEvidenceRepository(connection.db);
   const researchReportRepository = new SqliteResearchReportRepository(connection.db);
   const researchSourceRepository = new SqliteResearchSourceRepository(connection.db);
+  const researchSourceFeedbackRepository = new SqliteResearchSourceFeedbackRepository(
+    connection.db,
+  );
+  const researchReportFeedbackRepository = new SqliteResearchReportFeedbackRepository(
+    connection.db,
+  );
   const memoryService = createMemoryService({
     semanticMemoryRepository,
     episodicMemoryRepository,
@@ -161,6 +173,8 @@ export function getWebRuntimeState(): WebRuntimeState {
     webEvidenceRepository,
     researchReportRepository,
     researchSourceRepository,
+    researchSourceFeedbackRepository,
+    researchReportFeedbackRepository,
     memoryService,
     runtime,
   };

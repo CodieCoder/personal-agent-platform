@@ -1,16 +1,26 @@
 import {
+  createResearchSourceFeedbackInputSchema,
+  deleteResearchSourceFeedbackInputSchema,
+  getResearchReportFeedbackInputSchema,
+  listResearchSourceFeedbackByReportInputSchema,
   researchReportDashboardQuerySchema,
   researchReportHistoryQuerySchema,
   researchReportIdSchema,
   researchReportStatusSchema,
   researchRequestSchema,
+  updateResearchSourceFeedbackInputSchema,
+  upsertResearchReportFeedbackInputSchema,
   workspaceIdSchema,
   z,
   type ResearchReportStatus,
 } from "@pap/contracts";
 import { researchCapabilityOutputSchema } from "@pap/capability-research";
 import type { MemoryService } from "@pap/memory";
-import type { ResearchReportRepository } from "@pap/storage";
+import type {
+  ResearchReportFeedbackRepository,
+  ResearchReportRepository,
+  ResearchSourceFeedbackRepository,
+} from "@pap/storage";
 import type { Runtime } from "@pap/runtime";
 import type { SafeWebError } from "../executions/types";
 import type {
@@ -20,12 +30,16 @@ import type {
   ResearchReportListResult,
   ResearchReportResult,
   ResearchRunResult,
+  ResearchFeedbackResult,
+  ResearchFeedbackListResult,
 } from "./types";
 
 export type ResearchOperationState = {
   runtime: Runtime;
   reportRepository: ResearchReportRepository;
   memoryService: MemoryService;
+  sourceFeedbackRepository: ResearchSourceFeedbackRepository;
+  reportFeedbackRepository: ResearchReportFeedbackRepository;
 };
 
 const researchListInputSchema = z
@@ -223,6 +237,14 @@ export async function getResearchReportOperation(
       found: true,
       report,
       memory: await listResearchMemoryStatuses(state, report.executionId),
+      reportFeedback: await state.reportFeedbackRepository.getByReportId({
+        reportId: report.id,
+        workspaceId: parsed.data.workspaceId,
+      }),
+      sourceFeedbackList: await state.sourceFeedbackRepository.listByReport({
+        reportId: report.id,
+        workspaceId: parsed.data.workspaceId,
+      }),
     };
   } catch (error) {
     return operationError(error, {
@@ -294,6 +316,162 @@ function summarizeMemoryStatus(input: {
   }
 
   return input.active > 0 ? "active" : "rejected";
+}
+
+export async function upsertReportFeedbackOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchFeedbackResult> {
+  const parsed = upsertResearchReportFeedbackInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_REPORT_FEEDBACK_INPUT_INVALID");
+  }
+
+  try {
+    return {
+      ok: true,
+      data: await state.reportFeedbackRepository.upsert(parsed.data),
+    };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_REPORT_FEEDBACK_UPSERT_FAILED",
+      message: "Report feedback could not be saved.",
+    });
+  }
+}
+
+export async function getReportFeedbackOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchFeedbackResult> {
+  const parsed = getResearchReportFeedbackInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_REPORT_FEEDBACK_INPUT_INVALID");
+  }
+
+  try {
+    return {
+      ok: true,
+      data: await state.reportFeedbackRepository.getByReportId(parsed.data),
+    };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_REPORT_FEEDBACK_LOAD_FAILED",
+      message: "Report feedback could not be loaded.",
+    });
+  }
+}
+
+export async function createSourceFeedbackOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchFeedbackResult> {
+  const parsed = createResearchSourceFeedbackInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_SOURCE_FEEDBACK_INPUT_INVALID");
+  }
+
+  try {
+    return {
+      ok: true,
+      data: await state.sourceFeedbackRepository.create(parsed.data),
+    };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_SOURCE_FEEDBACK_CREATE_FAILED",
+      message: "Source feedback could not be saved.",
+    });
+  }
+}
+
+export async function updateSourceFeedbackOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchFeedbackResult> {
+  const parsed = updateResearchSourceFeedbackInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_SOURCE_FEEDBACK_INPUT_INVALID");
+  }
+
+  try {
+    return {
+      ok: true,
+      data: await state.sourceFeedbackRepository.update(parsed.data),
+    };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_SOURCE_FEEDBACK_UPDATE_FAILED",
+      message: "Source feedback could not be updated.",
+    });
+  }
+}
+
+export async function deleteSourceFeedbackOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchFeedbackResult> {
+  const parsed = deleteResearchSourceFeedbackInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_SOURCE_FEEDBACK_INPUT_INVALID");
+  }
+
+  try {
+    await state.sourceFeedbackRepository.delete(parsed.data);
+    return { ok: true };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_SOURCE_FEEDBACK_DELETE_FAILED",
+      message: "Source feedback could not be removed.",
+    });
+  }
+}
+
+export async function listSourceFeedbackOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchFeedbackListResult> {
+  const parsed = listResearchSourceFeedbackByReportInputSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return invalidInputListResult("RESEARCH_SOURCE_FEEDBACK_LIST_INVALID");
+  }
+
+  try {
+    return {
+      ok: true,
+      data: await state.sourceFeedbackRepository.listByReport(parsed.data),
+    };
+  } catch (error) {
+    return operationListError(error, {
+      code: "RESEARCH_SOURCE_FEEDBACK_LOAD_FAILED",
+      message: "Source feedback could not be loaded.",
+    });
+  }
+}
+
+function invalidInputListResult(code: string): { ok: false; error: SafeWebError } {
+  return {
+    ok: false,
+    error: {
+      code,
+      message: "Research request input is not valid.",
+    },
+  };
+}
+
+function operationListError(
+  error: unknown,
+  fallback: SafeWebError,
+): { ok: false; error: SafeWebError } {
+  return {
+    ok: false,
+    error: toSafeWebError(error, fallback),
+  };
 }
 
 function coerceResearchRequestInput(input: unknown): unknown {

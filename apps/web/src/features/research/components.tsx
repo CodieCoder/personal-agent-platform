@@ -1,14 +1,17 @@
-import type { FormEvent } from "react";
-import { Link } from "@tanstack/react-router";
+import { type FormEvent, useCallback, useState } from "react";
+import { Link, useRouter } from "@tanstack/react-router";
 import type {
   ResearchCitation,
   ResearchFinding,
   ResearchReport,
+  ResearchReportFeedback,
   ResearchReportHistoryItem,
   ResearchReportHistoryPage,
   ResearchReportHistorySort,
   ResearchReportStatus,
   ResearchSelectedSource,
+  ResearchSourceFeedback,
+  ResearchSourceFeedbackRating,
   ResearchWarning,
   Workspace,
 } from "@pap/contracts";
@@ -20,6 +23,12 @@ import type {
   ResearchReportHistoryResult,
   ResearchReportListResult,
 } from "./types";
+import {
+  createSourceFeedback,
+  deleteSourceFeedback,
+  updateSourceFeedback,
+  upsertReportFeedback,
+} from "./server";
 
 const researchReportStatuses = [
   "pending",
@@ -470,9 +479,13 @@ export function ResearchHistoryPagination({
 export function ResearchReportDetail({
   memory,
   report,
+  reportFeedback,
+  sourceFeedbackList,
 }: {
   memory: ResearchMemoryStatusSummary;
   report: ResearchReport;
+  reportFeedback: ResearchReportFeedback | null;
+  sourceFeedbackList: ResearchSourceFeedback[];
 }) {
   return (
     <div className="detail-grid" data-research-report-detail="true">
@@ -511,11 +524,13 @@ export function ResearchReportDetail({
         </div>
       </section>
 
+      <ReportFeedbackPanel report={report} reportFeedback={reportFeedback} />
       <MemoryProposalPanel memory={memory} />
       <FindingsPanel citations={report.citations} findings={report.findings} />
       <SourcesPanel
         citations={report.citations}
         sources={report.sources}
+        sourceFeedbackList={sourceFeedbackList}
         warnings={report.warnings}
       />
       <WarningsPanel warnings={report.warnings} />
@@ -580,12 +595,16 @@ function FindingsPanel({
 function SourcesPanel({
   citations,
   sources,
+  sourceFeedbackList,
   warnings,
 }: {
   citations: ResearchCitation[];
   sources: ResearchSelectedSource[];
+  sourceFeedbackList: ResearchSourceFeedback[];
   warnings: ResearchWarning[];
 }) {
+  const feedbackBySource = new Map(sourceFeedbackList.map((f) => [f.sourceId, f]));
+
   return (
     <section className="detail-panel" aria-labelledby="research-sources-title">
       <div className="section-heading">
@@ -621,6 +640,10 @@ function SourcesPanel({
                   {sourceWarning.message}
                 </p>
               ))}
+              <SourceFeedbackControl
+                feedback={feedbackBySource.get(source.id) ?? null}
+                source={source}
+              />
             </li>
           ))}
         </ul>
@@ -652,6 +675,332 @@ function WarningsPanel({ warnings }: { warnings: ResearchWarning[] }) {
         </ul>
       )}
     </section>
+  );
+}
+
+function ReportFeedbackPanel({
+  report,
+  reportFeedback,
+}: {
+  report: ResearchReport;
+  reportFeedback: ResearchReportFeedback | null;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [localRating, setLocalRating] = useState<ResearchSourceFeedbackRating>(
+    reportFeedback?.rating ?? "neutral",
+  );
+  const [localUseful, setLocalUseful] = useState(reportFeedback?.useful ?? false);
+  const [localNotes, setLocalNotes] = useState(reportFeedback?.notes ?? "");
+
+  const hasExisting = reportFeedback !== null;
+
+  const handleSubmit = useCallback(async () => {
+    setSubmitting(true);
+
+    try {
+      await upsertReportFeedback({
+        data: {
+          reportId: report.id,
+          workspaceId: report.workspaceId,
+          rating: localRating,
+          useful: localUseful,
+          notes: localNotes.trim() || null,
+          reason: null,
+        },
+      });
+      await router.invalidate();
+      setEditing(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [router, report.id, report.workspaceId, localRating, localUseful, localNotes]);
+
+  const handleCancel = useCallback(() => {
+    setLocalRating(reportFeedback?.rating ?? "neutral");
+    setLocalUseful(reportFeedback?.useful ?? false);
+    setLocalNotes(reportFeedback?.notes ?? "");
+    setEditing(false);
+  }, [reportFeedback]);
+
+  return (
+    <section className="detail-panel" aria-labelledby="research-report-feedback-title">
+      <div className="section-heading">
+        <h2 id="research-report-feedback-title">Report feedback</h2>
+        {hasExisting && !editing ? (
+          <span className="pill pill-neutral">{reportFeedback.rating}</span>
+        ) : null}
+      </div>
+
+      {!editing && hasExisting ? (
+        <div className="feedback-display">
+          <p className="trace-meta">
+            Rated <strong>{reportFeedback.rating}</strong>
+            {reportFeedback.useful && " (useful)"} - updated{" "}
+            {formatTimestamp(reportFeedback.updatedAt)}
+          </p>
+          {reportFeedback.notes ? <p className="trace-meta">{reportFeedback.notes}</p> : null}
+          <button
+            className="secondary-button"
+            disabled={submitting}
+            onClick={() => setEditing(true)}
+            type="button"
+          >
+            Edit feedback
+          </button>
+        </div>
+      ) : null}
+
+      {editing || !hasExisting ? (
+        <div className="stack-form">
+          <div className="field-grid">
+            <label htmlFor="report-feedback-rating">Rating</label>
+            <select
+              className="select-input"
+              disabled={submitting}
+              id="report-feedback-rating"
+              onChange={(e) => setLocalRating(e.target.value as ResearchSourceFeedbackRating)}
+              value={localRating}
+            >
+              <option value="useful">Useful</option>
+              <option value="neutral">Neutral</option>
+              <option value="poor">Poor</option>
+            </select>
+          </div>
+          <label className="check-control">
+            <input
+              checked={localUseful}
+              disabled={submitting}
+              onChange={(e) => setLocalUseful(e.target.checked)}
+              type="checkbox"
+            />
+            This report was useful
+          </label>
+          <div className="field-grid">
+            <label htmlFor="report-feedback-notes">Notes</label>
+            <textarea
+              disabled={submitting}
+              id="report-feedback-notes"
+              maxLength={2000}
+              onChange={(e) => setLocalNotes(e.target.value)}
+              placeholder="Optional notes about this report"
+              value={localNotes}
+            />
+          </div>
+          <div className="compact-fields">
+            <button
+              aria-busy={submitting}
+              className="primary-button"
+              disabled={submitting}
+              onClick={handleSubmit}
+              type="button"
+            >
+              {hasExisting ? "Update feedback" : "Save feedback"}
+            </button>
+            {hasExisting ? (
+              <button
+                className="secondary-button"
+                disabled={submitting}
+                onClick={handleCancel}
+                type="button"
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function SourceFeedbackControl({
+  feedback,
+  source,
+}: {
+  feedback: ResearchSourceFeedback | null;
+  source: ResearchSelectedSource;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [localRating, setLocalRating] = useState<ResearchSourceFeedbackRating>(
+    feedback?.rating ?? "neutral",
+  );
+  const [localHelpful, setLocalHelpful] = useState(feedback?.helpful ?? false);
+  const [localNotes, setLocalNotes] = useState(feedback?.notes ?? "");
+
+  const hasExisting = feedback !== null;
+
+  const handleSave = useCallback(async () => {
+    setSubmitting(true);
+
+    try {
+      await createSourceFeedback({
+        data: {
+          sourceId: source.id,
+          reportId: source.reportId,
+          workspaceId: source.workspaceId,
+          rating: localRating,
+          helpful: localHelpful,
+          notes: localNotes.trim() || null,
+          reason: null,
+        },
+      });
+      await router.invalidate();
+      setEditing(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [router, source.id, source.reportId, source.workspaceId, localRating, localHelpful, localNotes]);
+
+  const handleUpdate = useCallback(async () => {
+    setSubmitting(true);
+
+    try {
+      await updateSourceFeedback({
+        data: {
+          sourceId: source.id,
+          workspaceId: source.workspaceId,
+          rating: localRating,
+          helpful: localHelpful,
+          notes: localNotes.trim() || null,
+        },
+      });
+      await router.invalidate();
+      setEditing(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [router, source.id, source.workspaceId, localRating, localHelpful, localNotes]);
+
+  const handleDelete = useCallback(async () => {
+    setSubmitting(true);
+
+    try {
+      await deleteSourceFeedback({
+        data: {
+          sourceId: source.id,
+          workspaceId: source.workspaceId,
+        },
+      });
+      await router.invalidate();
+      setLocalRating("neutral");
+      setLocalHelpful(false);
+      setLocalNotes("");
+      setEditing(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [router, source.id, source.workspaceId]);
+
+  const handleCancel = useCallback(() => {
+    setLocalRating(feedback?.rating ?? "neutral");
+    setLocalHelpful(feedback?.helpful ?? false);
+    setLocalNotes(feedback?.notes ?? "");
+    setEditing(false);
+  }, [feedback]);
+
+  return (
+    <div className="feedback-control">
+      {!editing && hasExisting ? (
+        <div className="feedback-display">
+          <span className="pill-row">
+            <span className="pill pill-neutral">{feedback.rating}</span>
+            {feedback.helpful ? <span className="pill pill-success">helpful</span> : null}
+          </span>
+          {feedback.notes ? <p className="trace-meta">{feedback.notes}</p> : null}
+          <div className="compact-fields">
+            <button
+              className="text-link"
+              disabled={submitting}
+              onClick={() => setEditing(true)}
+              type="button"
+            >
+              Edit
+            </button>
+            <button
+              className="text-link danger-link"
+              disabled={submitting}
+              onClick={handleDelete}
+              type="button"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {editing || !hasExisting ? (
+        <div className="stack-form">
+          <div className="compact-fields">
+            <select
+              aria-label="Source rating"
+              className="select-input compact-input"
+              disabled={submitting}
+              onChange={(e) => setLocalRating(e.target.value as ResearchSourceFeedbackRating)}
+              value={localRating}
+            >
+              <option value="useful">Useful</option>
+              <option value="neutral">Neutral</option>
+              <option value="poor">Poor</option>
+            </select>
+            <label className="check-control">
+              <input
+                checked={localHelpful}
+                disabled={submitting}
+                onChange={(e) => setLocalHelpful(e.target.checked)}
+                type="checkbox"
+              />
+              Helpful
+            </label>
+          </div>
+          <textarea
+            aria-label="Source feedback notes"
+            className="compact-input"
+            disabled={submitting}
+            maxLength={2000}
+            onChange={(e) => setLocalNotes(e.target.value)}
+            placeholder="Optional notes"
+            value={localNotes}
+          />
+          <div className="compact-fields">
+            {hasExisting ? (
+              <button
+                aria-busy={submitting}
+                className="primary-button compact-btn"
+                disabled={submitting}
+                onClick={handleUpdate}
+                type="button"
+              >
+                Update
+              </button>
+            ) : (
+              <button
+                aria-busy={submitting}
+                className="primary-button compact-btn"
+                disabled={submitting}
+                onClick={handleSave}
+                type="button"
+              >
+                Save
+              </button>
+            )}
+            {hasExisting ? (
+              <button
+                className="secondary-button compact-btn"
+                disabled={submitting}
+                onClick={handleCancel}
+                type="button"
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

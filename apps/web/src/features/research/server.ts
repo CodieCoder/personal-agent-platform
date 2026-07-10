@@ -1,10 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
+  createSourceFeedbackOperation,
+  deleteSourceFeedbackOperation,
   getResearchReportDashboardOperation,
   getResearchReportOperation,
+  getReportFeedbackOperation,
   listResearchReportHistoryOperation,
   listResearchReportsOperation,
+  listSourceFeedbackOperation,
   runResearchOperation,
+  updateSourceFeedbackOperation,
+  upsertReportFeedbackOperation,
 } from "./operations";
 
 export const runResearch = createServerFn({ method: "POST" })
@@ -35,6 +41,42 @@ export const getResearchReport = createServerFn({ method: "GET" })
     withResearchState((state) => getResearchReportOperation(state, data)),
   );
 
+export const upsertReportFeedback = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => upsertReportFeedbackOperation(state, data)),
+  );
+
+export const getReportFeedback = createServerFn({ method: "GET" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => getReportFeedbackOperation(state, data)),
+  );
+
+export const createSourceFeedback = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => createSourceFeedbackOperation(state, data)),
+  );
+
+export const updateSourceFeedback = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => updateSourceFeedbackOperation(state, data)),
+  );
+
+export const deleteSourceFeedback = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => deleteSourceFeedbackOperation(state, data)),
+  );
+
+export const getSourceFeedbackList = createServerFn({ method: "GET" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => listSourceFeedbackOperation(state, data)),
+  );
+
 async function withResearchState<T>(
   operation: (state: Awaited<ReturnType<typeof getResearchOperationState>>) => Promise<T>,
 ): Promise<T> {
@@ -50,5 +92,7 @@ async function getResearchOperationState() {
     runtime: state.runtime,
     reportRepository: state.researchReportRepository,
     memoryService: state.memoryService,
+    sourceFeedbackRepository: state.researchSourceFeedbackRepository,
+    reportFeedbackRepository: state.researchReportFeedbackRepository,
   };
 }

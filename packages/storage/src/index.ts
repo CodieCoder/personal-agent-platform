@@ -32,6 +32,11 @@ export type {
   UpdateResearchReportStatusInput,
 } from "./interfaces/research-report-repository.js";
 export type {
+  GetResearchReportFeedbackInput,
+  ResearchReportFeedbackRepository,
+  UpsertResearchReportFeedbackInput,
+} from "./interfaces/research-report-feedback-repository.js";
+export type {
   CreateResearchSourceInput,
   GetResearchSourceByIdInput,
   ListResearchSourcesByExecutionInput,
@@ -40,6 +45,14 @@ export type {
   UpdateResearchSourceAnalysisInput,
   UpdateResearchSourceStatusInput,
 } from "./interfaces/research-source-repository.js";
+export type {
+  CreateResearchSourceFeedbackInput,
+  DeleteResearchSourceFeedbackInput,
+  GetResearchSourceFeedbackBySourceInput,
+  ListResearchSourceFeedbackByReportInput,
+  ResearchSourceFeedbackRepository,
+  UpdateResearchSourceFeedbackInput,
+} from "./interfaces/research-source-feedback-repository.js";
 export type {
   ApproveSemanticMemoryProposalInput,
   CreateSemanticMemoryInput,

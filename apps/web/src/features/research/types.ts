@@ -2,9 +2,11 @@ import type {
   MemoryStatus,
   ResearchReport,
   ResearchReportDashboardSummary,
+  ResearchReportFeedback,
   ResearchReportHistoryPage,
   ResearchReportListPage,
   ResearchReportStatus,
+  ResearchSourceFeedback,
   WorkspaceId,
 } from "@pap/contracts";
 import type { SafeWebError } from "../executions/types";
@@ -70,6 +72,8 @@ export type ResearchReportResult =
       found: true;
       report: ResearchReport;
       memory: ResearchMemoryStatusSummary;
+      reportFeedback: ResearchReportFeedback | null;
+      sourceFeedbackList: ResearchSourceFeedback[];
     }
   | {
       ok: false;
@@ -87,3 +91,23 @@ export type ResearchMemoryStatusSummary = {
     status: MemoryStatus;
   }[];
 };
+
+export type ResearchFeedbackResult =
+  | {
+      ok: true;
+      data?: ResearchSourceFeedback | ResearchReportFeedback | null;
+    }
+  | {
+      ok: false;
+      error: SafeWebError;
+    };
+
+export type ResearchFeedbackListResult =
+  | {
+      ok: true;
+      data: ResearchSourceFeedback[];
+    }
+  | {
+      ok: false;
+      error: SafeWebError;
+    };

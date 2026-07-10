@@ -54,7 +54,12 @@ function ResearchReportRoute() {
         </section>
       ) : null}
       {result.ok && result.found ? (
-        <ResearchReportDetail memory={result.memory} report={result.report} />
+        <ResearchReportDetail
+          memory={result.memory}
+          report={result.report}
+          reportFeedback={result.reportFeedback}
+          sourceFeedbackList={result.sourceFeedbackList}
+        />
       ) : null}
     </>
   );
