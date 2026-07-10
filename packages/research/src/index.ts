@@ -5,6 +5,7 @@ export * from "./errors.js";
 export * from "./memory-proposals.js";
 export * from "./query-planning.js";
 export * from "./ranking.js";
+export * from "./report-export.js";
 export * from "./report-synthesis.js";
 export * from "./source-selection.js";
 export * from "./trace-metadata.js";

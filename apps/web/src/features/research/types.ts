@@ -1,5 +1,6 @@
 import type {
   MemoryStatus,
+  SemanticMemoryRecord,
   ResearchReport,
   ResearchReportDashboardSummary,
   ResearchReportFeedback,
@@ -80,17 +81,41 @@ export type ResearchReportResult =
       error: SafeWebError;
     };
 
+export type ResearchMemoryProposalDetail = {
+  record: SemanticMemoryRecord;
+  conflictingActive: SemanticMemoryRecord[];
+};
+
 export type ResearchMemoryStatusSummary = {
   status: "none" | "pending_review" | "active" | "rejected" | "mixed";
   total: number;
   proposed: number;
   active: number;
   rejected: number;
-  records: {
-    id: string;
-    status: MemoryStatus;
-  }[];
+  records: ResearchMemoryProposalDetail[];
 };
+
+export type ResearchMemoryProposalActionResult =
+  | {
+      ok: true;
+      id: string;
+      status: MemoryStatus;
+    }
+  | {
+      ok: false;
+      error: SafeWebError;
+    };
+
+export type ResearchExportActionResult =
+  | {
+      ok: true;
+      content: string;
+      contentType: string;
+    }
+  | {
+      ok: false;
+      error: SafeWebError;
+    };
 
 export type ResearchFeedbackResult =
   | {

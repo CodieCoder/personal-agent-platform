@@ -3,6 +3,8 @@ import {
   deleteResearchSourceFeedbackInputSchema,
   getResearchReportFeedbackInputSchema,
   listResearchSourceFeedbackByReportInputSchema,
+  memoryIdSchema,
+  researchExportFormatSchema,
   researchReportDashboardQuerySchema,
   researchReportHistoryQuerySchema,
   researchReportIdSchema,
@@ -13,6 +15,7 @@ import {
   workspaceIdSchema,
   z,
   type ResearchReportStatus,
+  type SemanticMemoryRecord,
 } from "@pap/contracts";
 import { researchCapabilityOutputSchema } from "@pap/capability-research";
 import type { MemoryService } from "@pap/memory";
@@ -22,16 +25,25 @@ import type {
   ResearchSourceFeedbackRepository,
 } from "@pap/storage";
 import type { Runtime } from "@pap/runtime";
+import {
+  generateJsonExport,
+  generateMarkdownExport,
+  generatePlainTextExport,
+  type ReportExportData,
+} from "@pap/research";
 import type { SafeWebError } from "../executions/types";
 import type {
+  ResearchExportActionResult,
+  ResearchFeedbackListResult,
+  ResearchFeedbackResult,
+  ResearchMemoryProposalActionResult,
+  ResearchMemoryProposalDetail,
   ResearchMemoryStatusSummary,
   ResearchReportDashboardResult,
   ResearchReportHistoryResult,
   ResearchReportListResult,
   ResearchReportResult,
   ResearchRunResult,
-  ResearchFeedbackResult,
-  ResearchFeedbackListResult,
 } from "./types";
 
 export type ResearchOperationState = {
@@ -236,7 +248,7 @@ export async function getResearchReportOperation(
       ok: true,
       found: true,
       report,
-      memory: await listResearchMemoryStatuses(state, report.executionId),
+      memory: await listResearchMemoryStatuses(state, report.executionId, report.workspaceId),
       reportFeedback: await state.reportFeedbackRepository.getByReportId({
         reportId: report.id,
         workspaceId: parsed.data.workspaceId,
@@ -257,6 +269,7 @@ export async function getResearchReportOperation(
 async function listResearchMemoryStatuses(
   state: ResearchOperationState,
   executionId: string,
+  workspaceId: string | null,
 ): Promise<ResearchMemoryStatusSummary> {
   const [proposed, active, rejected] = await Promise.all([
     state.memoryService.listSemanticMemory({
@@ -275,10 +288,32 @@ async function listResearchMemoryStatuses(
       limit: 50,
     }),
   ]);
-  const records = [...proposed, ...active, ...rejected].map((record) => ({
-    id: record.id,
-    status: record.status,
-  }));
+
+  const records: ResearchMemoryProposalDetail[] = [];
+
+  const allRecords = [...proposed, ...active, ...rejected];
+  const conflictingCache = new Map<string, SemanticMemoryRecord[]>();
+
+  for (const record of allRecords) {
+    const cacheKey = `${record.subject}:${record.predicate}`;
+    let conflictingActive: SemanticMemoryRecord[];
+
+    if (conflictingCache.has(cacheKey)) {
+      conflictingActive = conflictingCache.get(cacheKey)!;
+    } else {
+      conflictingActive = await findConflictingActiveMemory(
+        state.memoryService,
+        record,
+        workspaceId,
+      );
+      conflictingCache.set(cacheKey, conflictingActive);
+    }
+
+    records.push({
+      record,
+      conflictingActive,
+    });
+  }
 
   return {
     status: summarizeMemoryStatus({
@@ -292,6 +327,33 @@ async function listResearchMemoryStatuses(
     rejected: rejected.length,
     records,
   };
+}
+
+async function findConflictingActiveMemory(
+  memoryService: MemoryService,
+  proposal: SemanticMemoryRecord,
+  workspaceId: string | null,
+): Promise<SemanticMemoryRecord[]> {
+  const query: {
+    subject: string;
+    predicate: string;
+    status: "active";
+    limit: number;
+    workspaceId?: string;
+  } = {
+    subject: proposal.subject,
+    predicate: proposal.predicate,
+    status: "active",
+    limit: 10,
+  };
+
+  if (workspaceId !== null) {
+    query.workspaceId = workspaceId;
+  }
+
+  const activeRecords = await memoryService.listSemanticMemory(query);
+
+  return activeRecords.filter((record) => record.id !== proposal.id);
 }
 
 function summarizeMemoryStatus(input: {
