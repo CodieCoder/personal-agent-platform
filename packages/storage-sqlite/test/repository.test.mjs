@@ -10,7 +10,9 @@ import {
   runMigrations,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteResearchReportFeedbackRepository,
   SqliteResearchReportRepository,
+  SqliteResearchSourceFeedbackRepository,
   SqliteResearchSourceRepository,
   SqliteSemanticMemoryRepository,
   SqliteSourceProfileRepository,
@@ -1725,6 +1727,588 @@ test("createRuntime serializes unhandled capability errors safely in SQLite trac
   }
 });
 
+test("SqliteResearchReportFeedbackRepository upserts and retrieves report feedback", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-report-feedback-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    researchReportRepository,
+    researchReportFeedbackRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_feedback", name: "Feedback Workspace" });
+    await traceRepository.create({
+      id: "exec_report_feedback",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_feedback",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_feedback_alpha",
+      executionId: "exec_report_feedback",
+      workspaceId: "workspace_feedback",
+      question: "Does report feedback persist?",
+      summary: researchSummaryFixture("Persistent feedback test."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+
+    const upserted = await researchReportFeedbackRepository.upsert({
+      reportId: "research_report_feedback_alpha",
+      workspaceId: "workspace_feedback",
+      rating: "useful",
+      useful: true,
+      reason: "Clear and sourced research.",
+      notes: "Will use this report for follow-up.",
+    });
+
+    assert.equal(upserted.reportId, "research_report_feedback_alpha");
+    assert.equal(upserted.rating, "useful");
+    assert.equal(upserted.useful, true);
+    assert.equal(upserted.reason, "Clear and sourced research.");
+    assert.equal(upserted.notes, "Will use this report for follow-up.");
+
+    const updated = await researchReportFeedbackRepository.upsert({
+      reportId: "research_report_feedback_alpha",
+      workspaceId: "workspace_feedback",
+      rating: "neutral",
+      useful: false,
+      reason: null,
+      notes: "Updated after re-evaluation.",
+    });
+
+    assert.equal(updated.rating, "neutral");
+    assert.equal(updated.useful, false);
+    assert.equal(updated.reason, null);
+    assert.equal(updated.notes, "Updated after re-evaluation.");
+
+    const fetched = await researchReportFeedbackRepository.getByReportId({
+      reportId: "research_report_feedback_alpha",
+      workspaceId: "workspace_feedback",
+    });
+
+    assert.equal(fetched?.rating, "neutral");
+    assert.equal(fetched?.notes, "Updated after re-evaluation.");
+
+    const missing = await researchReportFeedbackRepository.getByReportId({
+      reportId: "research_report_missing",
+      workspaceId: "workspace_feedback",
+    });
+
+    assert.equal(missing, null);
+  } finally {
+    close();
+  }
+});
+
+test("SqliteResearchReportFeedbackRepository rejects feedback for missing or wrong-workspace reports", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-feedback-reject-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    researchReportRepository,
+    researchReportFeedbackRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_feedback_alpha", name: "Alpha" });
+    await workspaceRepository.create({ id: "workspace_feedback_beta", name: "Beta" });
+    await traceRepository.create({
+      id: "exec_feedback_reject",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_feedback_alpha",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_feedback_reject",
+      executionId: "exec_feedback_reject",
+      workspaceId: "workspace_feedback_alpha",
+      question: "Rejection test?",
+      summary: researchSummaryFixture("Rejection test."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+
+    await assert.rejects(
+      researchReportFeedbackRepository.upsert({
+        reportId: "research_report_missing",
+        workspaceId: "workspace_feedback_alpha",
+        rating: "useful",
+      }),
+      /Research report not found/u,
+    );
+
+    await assert.rejects(
+      researchReportFeedbackRepository.upsert({
+        reportId: "research_report_feedback_reject",
+        workspaceId: "workspace_feedback_beta",
+        rating: "useful",
+      }),
+      /workspace mismatch/u,
+    );
+
+    const wrongWorkspaceGet = await researchReportFeedbackRepository.getByReportId({
+      reportId: "research_report_feedback_reject",
+      workspaceId: "workspace_feedback_beta",
+    });
+
+    assert.equal(wrongWorkspaceGet, null);
+  } finally {
+    close();
+  }
+});
+
+test("SqliteResearchSourceFeedbackRepository creates, gets, lists, updates, and deletes source feedback", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-source-feedback-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    researchSourceFeedbackRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_src_fb", name: "Source FB" });
+    await traceRepository.create({
+      id: "exec_src_feedback",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_src_fb",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    const report = await researchReportRepository.create({
+      id: "research_report_src_fb",
+      executionId: "exec_src_feedback",
+      workspaceId: "workspace_src_fb",
+      question: "Source feedback test?",
+      summary: researchSummaryFixture("Source feedback test."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+    const sourceA = await researchSourceRepository.create({
+      id: "research_source_src_fb_a",
+      reportId: report.id,
+      executionId: report.executionId,
+      workspaceId: report.workspaceId,
+      url: "https://example.com/src-fb-a",
+      title: "Source FB A",
+      selectionRank: 1,
+    });
+    const sourceB = await researchSourceRepository.create({
+      id: "research_source_src_fb_b",
+      reportId: report.id,
+      executionId: report.executionId,
+      workspaceId: report.workspaceId,
+      url: "https://example.com/src-fb-b",
+      title: "Source FB B",
+      selectionRank: 2,
+    });
+
+    const created = await researchSourceFeedbackRepository.create({
+      workspaceId: "workspace_src_fb",
+      reportId: report.id,
+      sourceId: sourceA.id,
+      rating: "useful",
+      helpful: true,
+      reason: "Accurate claims.",
+      notes: "Best source for this topic.",
+    });
+
+    assert.equal(created.sourceId, sourceA.id);
+    assert.equal(created.rating, "useful");
+    assert.equal(created.helpful, true);
+    assert.equal(created.reason, "Accurate claims.");
+
+    await researchSourceFeedbackRepository.create({
+      workspaceId: "workspace_src_fb",
+      reportId: report.id,
+      sourceId: sourceB.id,
+      rating: "poor",
+      helpful: false,
+      reason: "Outdated information.",
+      notes: null,
+    });
+
+    const bySource = await researchSourceFeedbackRepository.getBySourceId({
+      sourceId: sourceA.id,
+      workspaceId: "workspace_src_fb",
+    });
+
+    assert.equal(bySource?.reason, "Accurate claims.");
+
+    const list = await researchSourceFeedbackRepository.listByReport({
+      reportId: report.id,
+      workspaceId: "workspace_src_fb",
+    });
+
+    assert.equal(list.length, 2);
+    assert.deepEqual(list.map((fb) => fb.sourceId).sort(), [sourceA.id, sourceB.id]);
+
+    const updated = await researchSourceFeedbackRepository.update({
+      sourceId: sourceA.id,
+      workspaceId: "workspace_src_fb",
+      rating: "neutral",
+      notes: "Revised after closer inspection.",
+    });
+
+    assert.equal(updated.rating, "neutral");
+    assert.equal(updated.notes, "Revised after closer inspection.");
+    assert.equal(updated.reason, "Accurate claims.");
+
+    await researchSourceFeedbackRepository.delete({
+      sourceId: sourceA.id,
+      workspaceId: "workspace_src_fb",
+    });
+
+    const afterDelete = await researchSourceFeedbackRepository.getBySourceId({
+      sourceId: sourceA.id,
+      workspaceId: "workspace_src_fb",
+    });
+
+    assert.equal(afterDelete, null);
+
+    const remaining = await researchSourceFeedbackRepository.listByReport({
+      reportId: report.id,
+      workspaceId: "workspace_src_fb",
+    });
+
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].sourceId, sourceB.id);
+  } finally {
+    close();
+  }
+});
+
+test("SqliteResearchSourceFeedbackRepository rejects duplicate and invalid source feedback", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-src-fb-reject-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    researchSourceFeedbackRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_src_reject", name: "Src Reject" });
+    await traceRepository.create({
+      id: "exec_src_reject",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_src_reject",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    const report = await researchReportRepository.create({
+      id: "research_report_src_reject",
+      executionId: "exec_src_reject",
+      workspaceId: "workspace_src_reject",
+      question: "Duplicate rejection?",
+      summary: researchSummaryFixture("Duplicate rejection test."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+    const source = await researchSourceRepository.create({
+      id: "research_source_src_reject",
+      reportId: report.id,
+      executionId: report.executionId,
+      workspaceId: report.workspaceId,
+      url: "https://example.com/src-reject",
+      title: "Src Reject",
+      selectionRank: 1,
+    });
+
+    await researchSourceFeedbackRepository.create({
+      workspaceId: "workspace_src_reject",
+      reportId: report.id,
+      sourceId: source.id,
+      rating: "useful",
+      helpful: false,
+      reason: null,
+      notes: null,
+    });
+
+    await assert.rejects(
+      researchSourceFeedbackRepository.create({
+        workspaceId: "workspace_src_reject",
+        reportId: report.id,
+        sourceId: source.id,
+        rating: "poor",
+        helpful: false,
+        reason: null,
+        notes: null,
+      }),
+      /UNIQUE constraint failed/u,
+    );
+
+    await assert.rejects(
+      researchSourceFeedbackRepository.create({
+        workspaceId: "workspace_src_reject",
+        reportId: report.id,
+        sourceId: "research_source_missing",
+        rating: "useful",
+        helpful: false,
+        reason: null,
+        notes: null,
+      }),
+      /Research source not found/u,
+    );
+  } finally {
+    close();
+  }
+});
+
+test("Report and source rows are unchanged after feedback mutations", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-feedback-immutable-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    researchReportFeedbackRepository,
+    researchSourceFeedbackRepository,
+    connection,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_immutable", name: "Immutable" });
+    await traceRepository.create({
+      id: "exec_immutable",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_immutable",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    const report = await researchReportRepository.create({
+      id: "research_report_immutable",
+      executionId: "exec_immutable",
+      workspaceId: "workspace_immutable",
+      question: "Immutability check?",
+      summary: researchSummaryFixture("Original report text."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+    const source = await researchSourceRepository.create({
+      id: "research_source_immutable",
+      reportId: report.id,
+      executionId: report.executionId,
+      workspaceId: report.workspaceId,
+      url: "https://example.com/immutable",
+      title: "Immutable source",
+      selectionRank: 1,
+    });
+
+    const reportBefore = connection.sqlite
+      .prepare("SELECT summary_json, question FROM research_reports WHERE id = ?")
+      .get(report.id);
+    const sourceBefore = connection.sqlite
+      .prepare("SELECT title, status FROM research_sources WHERE id = ?")
+      .get(source.id);
+
+    await researchReportFeedbackRepository.upsert({
+      reportId: report.id,
+      workspaceId: "workspace_immutable",
+      rating: "useful",
+      useful: true,
+      reason: "Well-sourced.",
+      notes: "Excellent research.",
+    });
+    await researchSourceFeedbackRepository.create({
+      workspaceId: "workspace_immutable",
+      reportId: report.id,
+      sourceId: source.id,
+      rating: "useful",
+      helpful: false,
+      reason: null,
+      notes: null,
+    });
+    await researchSourceFeedbackRepository.update({
+      sourceId: source.id,
+      workspaceId: "workspace_immutable",
+      rating: "neutral",
+      notes: "Updated feedback note.",
+    });
+    await researchSourceFeedbackRepository.delete({
+      sourceId: source.id,
+      workspaceId: "workspace_immutable",
+    });
+
+    const reportAfter = connection.sqlite
+      .prepare("SELECT summary_json, question FROM research_reports WHERE id = ?")
+      .get(report.id);
+    const sourceAfter = connection.sqlite
+      .prepare("SELECT title, status FROM research_sources WHERE id = ?")
+      .get(source.id);
+
+    assert.deepEqual(reportBefore, reportAfter);
+    assert.deepEqual(sourceBefore, sourceAfter);
+  } finally {
+    close();
+  }
+});
+
+test("Feedback records enforce workspace isolation", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-feedback-isolation-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    researchReportRepository,
+    researchSourceRepository,
+    researchReportFeedbackRepository,
+    researchSourceFeedbackRepository,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_fb_alpha", name: "Alpha" });
+    await workspaceRepository.create({ id: "workspace_fb_beta", name: "Beta" });
+    await traceRepository.create({
+      id: "exec_fb_iso_alpha",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_fb_alpha",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await traceRepository.create({
+      id: "exec_fb_iso_beta",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_fb_beta",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+
+    const alphaReport = await researchReportRepository.create({
+      id: "research_report_fb_alpha",
+      executionId: "exec_fb_iso_alpha",
+      workspaceId: "workspace_fb_alpha",
+      question: "Alpha report?",
+      summary: researchSummaryFixture("Alpha."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+    const betaReport = await researchReportRepository.create({
+      id: "research_report_fb_beta",
+      executionId: "exec_fb_iso_beta",
+      workspaceId: "workspace_fb_beta",
+      question: "Beta report?",
+      summary: researchSummaryFixture("Beta."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+    const alphaSource = await researchSourceRepository.create({
+      id: "research_source_fb_alpha",
+      reportId: alphaReport.id,
+      executionId: alphaReport.executionId,
+      workspaceId: alphaReport.workspaceId,
+      url: "https://example.com/alpha-src",
+      title: "Alpha source",
+      selectionRank: 1,
+    });
+
+    await researchReportFeedbackRepository.upsert({
+      reportId: alphaReport.id,
+      workspaceId: "workspace_fb_alpha",
+      rating: "useful",
+      useful: false,
+      reason: null,
+      notes: null,
+    });
+    await researchSourceFeedbackRepository.create({
+      workspaceId: "workspace_fb_alpha",
+      reportId: alphaReport.id,
+      sourceId: alphaSource.id,
+      rating: "useful",
+      helpful: false,
+      reason: null,
+      notes: null,
+    });
+
+    const alphaReportFb = await researchReportFeedbackRepository.getByReportId({
+      reportId: alphaReport.id,
+      workspaceId: "workspace_fb_alpha",
+    });
+    const betaReportFb = await researchReportFeedbackRepository.getByReportId({
+      reportId: betaReport.id,
+      workspaceId: "workspace_fb_beta",
+    });
+    const alphaSourceFb = await researchSourceFeedbackRepository.listByReport({
+      reportId: alphaReport.id,
+      workspaceId: "workspace_fb_alpha",
+    });
+    const betaSourceFb = await researchSourceFeedbackRepository.listByReport({
+      reportId: betaReport.id,
+      workspaceId: "workspace_fb_beta",
+    });
+
+    assert.notEqual(alphaReportFb, null);
+    assert.equal(betaReportFb, null);
+    assert.equal(alphaSourceFb.length, 1);
+    assert.equal(betaSourceFb.length, 0);
+
+    const wrongWorkspaceReportFb = await researchReportFeedbackRepository.getByReportId({
+      reportId: alphaReport.id,
+      workspaceId: "workspace_fb_beta",
+    });
+
+    assert.equal(wrongWorkspaceReportFb, null);
+
+    const wrongWorkspaceSourceFb = await researchSourceFeedbackRepository.getBySourceId({
+      sourceId: alphaSource.id,
+      workspaceId: "workspace_fb_beta",
+    });
+
+    assert.equal(wrongWorkspaceSourceFb, null);
+  } finally {
+    close();
+  }
+});
+
+test("Removing a research report cascades report feedback removal", async () => {
+  const temporaryDatabase = await createTemporarySqliteDatabase("pap-sqlite-feedback-cascade-");
+  const {
+    traceRepository,
+    workspaceRepository,
+    researchReportRepository,
+    researchReportFeedbackRepository,
+    connection,
+    close,
+  } = createMigratedRepositories(temporaryDatabase.databaseUrl);
+
+  try {
+    await workspaceRepository.create({ id: "workspace_cascade", name: "Cascade" });
+    await traceRepository.create({
+      id: "exec_cascade",
+      capabilityId: "capability.research",
+      workspaceId: "workspace_cascade",
+      startedAt: "2026-07-04T09:00:00.000Z",
+    });
+    await researchReportRepository.create({
+      id: "research_report_cascade",
+      executionId: "exec_cascade",
+      workspaceId: "workspace_cascade",
+      question: "Cascade test?",
+      summary: researchSummaryFixture("Cascade."),
+      createdAt: "2026-07-04T09:01:00.000Z",
+    });
+    await researchReportFeedbackRepository.upsert({
+      reportId: "research_report_cascade",
+      workspaceId: "workspace_cascade",
+      rating: "useful",
+      useful: false,
+      reason: null,
+      notes: null,
+    });
+
+    const before = connection.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM research_report_feedback WHERE report_id = ?")
+      .get("research_report_cascade");
+    assert.equal(before.count, 1);
+
+    connection.sqlite.prepare("DELETE FROM execution_traces WHERE id = ?").run("exec_cascade");
+
+    const after = connection.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM research_report_feedback WHERE report_id = ?")
+      .get("research_report_cascade");
+    assert.equal(after.count, 0);
+  } finally {
+    close();
+  }
+});
+
 function createMigratedRepository(databaseUrl) {
   runMigrations({ databaseUrl });
   return createRepository(databaseUrl);
@@ -1754,6 +2338,8 @@ function createMigratedRepositories(databaseUrl) {
     webEvidenceRepository: new SqliteWebEvidenceRepository(connection.db),
     researchReportRepository: new SqliteResearchReportRepository(connection.db),
     researchSourceRepository: new SqliteResearchSourceRepository(connection.db),
+    researchReportFeedbackRepository: new SqliteResearchReportFeedbackRepository(connection.db),
+    researchSourceFeedbackRepository: new SqliteResearchSourceFeedbackRepository(connection.db),
     close: connection.close,
   };
 }

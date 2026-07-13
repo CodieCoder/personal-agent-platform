@@ -10,6 +10,9 @@ import {
   canonicalizeResearchUrl,
   evaluateResearchMemoryProposalEligibility,
   findUnsupportedFindingCitationIds,
+  generateJsonExport,
+  generateMarkdownExport,
+  generatePlainTextExport,
   normalizeResearchCandidates,
   planResearchQueries,
   researchArticleAnalysisOutputSchema,
@@ -67,7 +70,7 @@ test("query planning truncates long search queries at word boundaries with trace
 test("research URL canonicalization removes tracking noise and rejects unsafe URLs", () => {
   assert.equal(
     canonicalizeResearchUrl(
-      "HTTPS://WWW.Example.COM:443/articles/update/?b=2&utm_source=newsletter&a=1#section",
+      "HTTPS://WWW.Example.COM:443/articles/update/?b=2&utm_source=newsletter&srsltid=abc&a=1#section",
     ),
     "https://www.example.com/articles/update?a=1&b=2",
   );
@@ -559,3 +562,224 @@ function createSynthesizedReport() {
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
+
+test("export shaping produces deterministic plain-text output preserving citations and limitations", () => {
+  const report = createSynthesizedReport();
+  const exportSources = report.sources.map((source) => ({
+    id: source.id,
+    title: source.title,
+    url: source.url,
+    finalUrl: source.finalUrl ?? null,
+    relevanceScore: source.relevanceScore ?? null,
+    status: source.status,
+  }));
+  const data = {
+    reportId: report.id,
+    executionId: report.executionId,
+    question: report.question,
+    workspaceId: report.workspaceId,
+    summaryText: report.summary.text,
+    findings: report.findings.map((f) => ({
+      title: f.title,
+      claimText: f.claimText,
+      confidence: f.confidence,
+      citationIds: f.citationIds,
+    })),
+    citations: report.citations.map((c) => ({
+      citationId: c.citationId,
+      sourceId: c.sourceId,
+      sourceTitle: c.sourceTitle,
+      sourceUrl: c.sourceUrl,
+      claimText: c.claimText,
+      sourceExcerpt: c.sourceExcerpt ?? null,
+    })),
+    sources: exportSources,
+    warnings: report.warnings,
+    limitations: report.limitations,
+    completedAt: report.completedAt,
+    createdAt: report.createdAt,
+  };
+
+  const first = generatePlainTextExport(data);
+  const second = generatePlainTextExport(data);
+
+  assert.equal(first, second);
+  assert.equal(first.startsWith("Research Report"), true);
+  assert.match(first, new RegExp(report.id));
+  assert.match(first, new RegExp(report.executionId));
+  assert.match(first, /Workspace: workspace_alpha/u);
+  assert.match(first, /Findings \(2\)/u);
+  assert.match(first, /Sources \(1\)/u);
+  assert.match(first, /Citations \(2\)/u);
+  assert.match(first, /Confidence: \d+%/u);
+  assert.match(first, /\[C1\]/u);
+  assert.equal(first.includes("ftp://"), false);
+  assert.equal(first.includes("password"), false);
+  assert.equal(first.toLowerCase().includes("authorization"), false);
+});
+
+test("export shaping produces deterministic Markdown output with inline escaping and limitation preservation", () => {
+  const report = createSynthesizedReport();
+  const exportSources = report.sources.map((source) => ({
+    id: source.id,
+    title: source.title,
+    url: source.url,
+    finalUrl: source.finalUrl ?? null,
+    relevanceScore: source.relevanceScore ?? null,
+    status: source.status,
+  }));
+  const data = {
+    reportId: report.id,
+    executionId: report.executionId,
+    question: report.question,
+    workspaceId: report.workspaceId,
+    summaryText: report.summary.text,
+    findings: report.findings.map((f) => ({
+      title: f.title,
+      claimText: f.claimText,
+      confidence: f.confidence,
+      citationIds: f.citationIds,
+    })),
+    citations: report.citations.map((c) => ({
+      citationId: c.citationId,
+      sourceId: c.sourceId,
+      sourceTitle: c.sourceTitle,
+      sourceUrl: c.sourceUrl,
+      claimText: c.claimText,
+      sourceExcerpt: c.sourceExcerpt ?? null,
+    })),
+    sources: exportSources,
+    warnings: report.warnings,
+    limitations: report.limitations,
+    completedAt: report.completedAt,
+    createdAt: report.createdAt,
+  };
+
+  const first = generateMarkdownExport(data);
+  const second = generateMarkdownExport(data);
+
+  assert.equal(first, second);
+  assert.equal(first.startsWith("# Research Report"), true);
+  assert.match(first, /\*\*Question:\*\*/u);
+  assert.match(first, new RegExp(report.id));
+  assert.match(first, new RegExp(report.executionId));
+  assert.match(first, /## Findings \(2\)/u);
+  assert.match(first, /## Sources \(1\)/u);
+  assert.match(first, /## Citations \(2\)/u);
+  assert.match(first, /## Limitations \(2\)/u);
+  assert.equal(first.includes(report.limitations[0].code), true);
+  assert.equal(first.includes("selected source"), true);
+  assert.equal(first.includes("analyzed source"), true);
+  assert.equal(first.includes("rawProviderOutput"), false);
+  assert.equal(first.toLowerCase().includes("systemprompt"), false);
+});
+
+test("export shaping produces deterministic JSON output without hidden data", () => {
+  const synthesized = createSynthesizedReport();
+  const report = {
+    ...synthesized,
+    status: "completed_with_warnings",
+    warnings: [
+      {
+        code: "partial_source_failure",
+        message: "One selected source could not be extracted.",
+        sourceId: synthesized.sources[0].id,
+        evidenceId: synthesized.sources[0].evidenceId,
+        details: { attempt: 1, stage: "extraction" },
+      },
+    ],
+    limitations: synthesized.limitations.map((limitation, index) =>
+      index === 0
+        ? {
+            ...limitation,
+            sourceId: synthesized.sources[0].id,
+            evidenceId: synthesized.sources[0].evidenceId,
+          }
+        : limitation,
+    ),
+  };
+
+  const first = generateJsonExport(report);
+  const second = generateJsonExport(report);
+
+  assert.equal(first, second);
+  const parsed = JSON.parse(first);
+
+  assert.deepEqual(parsed, report);
+  assert.equal(parsed.id, report.id);
+  assert.equal(parsed.executionId, report.executionId);
+  assert.equal(parsed.question, report.question);
+  assert.equal(parsed.workspaceId, report.workspaceId);
+  assert.deepEqual(parsed.summary.keyPoints, report.summary.keyPoints);
+  assert.equal(parsed.findings[0].id, report.findings[0].id);
+  assert.equal(parsed.findings[0].kind, report.findings[0].kind);
+  assert.equal(parsed.findings[0].confidence, report.findings[0].confidence);
+  assert.equal(parsed.citations[0].evidenceId, report.citations[0].evidenceId);
+  assert.equal(parsed.citations.length, 2);
+  assert.equal(parsed.sources.length, 1);
+  assert.deepEqual(parsed.sources[0].analysis, report.sources[0].analysis);
+  assert.deepEqual(parsed.sources[0].citationIds, report.sources[0].citationIds);
+  assert.equal(parsed.sources[0].selectionRank, report.sources[0].selectionRank);
+  assert.equal(parsed.sources[0].createdAt, report.sources[0].createdAt);
+  assert.deepEqual(parsed.warnings[0].details, report.warnings[0].details);
+  assert.equal(parsed.warnings[0].sourceId, report.warnings[0].sourceId);
+  assert.equal(parsed.warnings.length, report.warnings.length);
+  assert.equal(parsed.limitations.length, report.limitations.length);
+  assert.equal(parsed.limitations[0].code, report.limitations[0].code);
+  assert.equal(parsed.limitations[0].message, report.limitations[0].message);
+  assert.equal(parsed.limitations[0].sourceId, report.limitations[0].sourceId);
+  assert.equal(parsed.status, report.status);
+  assert.equal(parsed.createdAt, report.createdAt);
+  assert.equal(parsed.completedAt, report.completedAt);
+  assert.equal("rawModelOutput" in parsed, false);
+  assert.equal("cookies" in parsed, false);
+  assert.equal("headers" in parsed, false);
+  assert.equal("stackTrace" in parsed, false);
+});
+
+test("export shaping trims trailing whitespace and rejects unsafe inputs", () => {
+  const report = createSynthesizedReport();
+  const data = {
+    reportId: report.id,
+    executionId: report.executionId,
+    question: report.question,
+    workspaceId: report.workspaceId,
+    summaryText: report.summary.text,
+    findings: report.findings.map((f) => ({
+      title: f.title,
+      claimText: f.claimText,
+      confidence: f.confidence,
+      citationIds: f.citationIds,
+    })),
+    citations: report.citations.map((c) => ({
+      citationId: c.citationId,
+      sourceId: c.sourceId,
+      sourceTitle: c.sourceTitle,
+      sourceUrl: c.sourceUrl,
+      claimText: c.claimText,
+      sourceExcerpt: c.sourceExcerpt ?? null,
+    })),
+    sources: report.sources.map((source) => ({
+      id: source.id,
+      title: source.title,
+      url: source.url,
+      finalUrl: source.finalUrl ?? null,
+      relevanceScore: source.relevanceScore ?? null,
+      status: source.status,
+    })),
+    warnings: report.warnings,
+    limitations: report.limitations,
+    completedAt: report.completedAt,
+    createdAt: report.createdAt,
+  };
+
+  const plain = generatePlainTextExport(data);
+  const md = generateMarkdownExport(data);
+  const json = generateJsonExport(report);
+
+  assert.equal(plain.endsWith("\n"), true);
+  assert.equal(md.endsWith("\n"), true);
+  assert.equal(json.endsWith("\n"), true);
+  assert.equal(plain.includes("\n\n\n"), false);
+  assert.equal(md.includes("\n\n\n\n"), false);
+});

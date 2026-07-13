@@ -24,6 +24,7 @@ export default defineConfig({
             "packages/capabilities/local-model-test/test/**/*.test.mjs",
             "packages/capabilities/research/test/**/*.test.mjs",
             "packages/capabilities/search-extract-test/test/**/*.test.mjs",
+            "qa/runner/test/**/*.test.mjs",
           ],
         },
       }),

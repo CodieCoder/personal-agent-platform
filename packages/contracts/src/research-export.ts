@@ -1,12 +1,27 @@
 import { z } from "zod";
-import { executionIdSchema, isoDateTimeSchema } from "./common.js";
+import { executionIdSchema, workspaceIdSchema } from "./common.js";
 import { researchReportIdSchema } from "./research.js";
 
 export const researchExportFormatSchema = z.enum(["plain-text", "markdown", "json"]);
 
+export const researchExportContentSchema = z.string().max(500_000);
+
+export const researchExportMimeTypeSchema = z.enum([
+  "text/plain; charset=utf-8",
+  "text/markdown; charset=utf-8",
+  "application/json; charset=utf-8",
+]);
+
+export const researchExportFilenameSchema = z
+  .string()
+  .min(1)
+  .max(260)
+  .regex(/^research-[A-Za-z0-9._-]+-\d{4}-\d{2}-\d{2}\.(?:txt|md|json)$/u);
+
 export const researchExportRequestSchema = z
   .object({
     reportId: researchReportIdSchema,
+    workspaceId: workspaceIdSchema.nullable().default(null),
     format: researchExportFormatSchema,
   })
   .strict();
@@ -16,11 +31,30 @@ export const researchExportResultSchema = z
     reportId: researchReportIdSchema,
     executionId: executionIdSchema,
     format: researchExportFormatSchema,
-    content: z.string().max(500_000),
-    contentType: z.string().max(120),
-    generatedAt: isoDateTimeSchema,
+    content: researchExportContentSchema,
+    filename: researchExportFilenameSchema,
+    mimeType: researchExportMimeTypeSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((result, context) => {
+    const expected = exportMetadataByFormat[result.format];
+
+    if (!result.filename.endsWith(expected.extension)) {
+      context.addIssue({
+        code: "custom",
+        message: `Research ${result.format} exports must use the ${expected.extension} extension.`,
+        path: ["filename"],
+      });
+    }
+
+    if (result.mimeType !== expected.mimeType) {
+      context.addIssue({
+        code: "custom",
+        message: `Research ${result.format} exports must use the expected MIME type.`,
+        path: ["mimeType"],
+      });
+    }
+  });
 
 export const researchExportPlainTextInputSchema = z
   .object({
@@ -88,3 +122,21 @@ export type ResearchExportFormat = z.infer<typeof researchExportFormatSchema>;
 export type ResearchExportRequest = z.infer<typeof researchExportRequestSchema>;
 export type ResearchExportResult = z.infer<typeof researchExportResultSchema>;
 export type ResearchExportPlainTextInput = z.infer<typeof researchExportPlainTextInputSchema>;
+
+const exportMetadataByFormat = {
+  "plain-text": {
+    extension: ".txt",
+    mimeType: "text/plain; charset=utf-8",
+  },
+  markdown: {
+    extension: ".md",
+    mimeType: "text/markdown; charset=utf-8",
+  },
+  json: {
+    extension: ".json",
+    mimeType: "application/json; charset=utf-8",
+  },
+} as const satisfies Record<
+  ResearchExportFormat,
+  { extension: string; mimeType: z.infer<typeof researchExportMimeTypeSchema> }
+>;

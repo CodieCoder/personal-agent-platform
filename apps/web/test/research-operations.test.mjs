@@ -8,7 +8,9 @@ import {
   runMigrations,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteResearchReportFeedbackRepository,
   SqliteResearchReportRepository,
+  SqliteResearchSourceFeedbackRepository,
   SqliteResearchSourceRepository,
   SqliteSemanticMemoryRepository,
   SqliteSourceProfileRepository,
@@ -24,12 +26,23 @@ import {
   createSearchTestFixtureUrlSafetyPolicy,
 } from "../src/features/search-test/fixtures.server.ts";
 import {
+  createSourceFeedbackOperation,
+  deleteSourceFeedbackOperation,
+  exportResearchReportOperation,
+  getReportFeedbackOperation,
   getResearchReportDashboardOperation,
   getResearchReportOperation,
   listResearchReportHistoryOperation,
   listResearchReportsOperation,
+  listSourceFeedbackOperation,
   runResearchOperation,
+  updateSourceFeedbackOperation,
+  upsertReportFeedbackOperation,
 } from "../src/features/research/operations.ts";
+import {
+  approveSemanticMemoryProposalOperation,
+  rejectSemanticMemoryProposalOperation,
+} from "../src/features/memory/operations.ts";
 
 const fixedNow = "2026-07-04T12:00:00.000Z";
 const fixedClock = () => new Date(fixedNow);
@@ -263,6 +276,47 @@ test("research operation uses extracted-text fallback when structured source ana
   }
 });
 
+test("research operation keeps deterministic source order when structured ranking stays invalid", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-research-ranking-fallback-", {
+    PAP_RESEARCH_TEST_FIXTURE_AI_MODE: "ranking_invalid",
+  });
+
+  try {
+    const result = await runResearchOperation(
+      fixture.state,
+      researchRequest({
+        maxSources: 2,
+        maxSearchResults: 8,
+      }),
+    );
+    const report = await getReportOrThrow(fixture, result);
+    const trace = await fixture.traceRepository.getById(
+      result.ok ? result.executionId : "exec_missing",
+    );
+    const selectionStep = trace.steps.find((step) => step.name === "select extraction budget");
+    const rankingStep = trace.steps.find(
+      (step) => step.name === "rank relevance" && step.status === "completed",
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(selectionStep?.metadata.selectedCount, 2);
+    assert.equal(report.sources.length, 2);
+    assert.equal(rankingStep?.metadata.rankingMode, "deterministic_fallback");
+    assert.equal(
+      report.warnings.some((warning) => warning.code === "source_ranking_fallback_used"),
+      true,
+    );
+    assert.equal(result.ok && result.status, "completed_with_warnings");
+    assert.equal(report.status, "completed_with_warnings");
+    assert.equal(report.findings.length > 0, true);
+    assert.equal(report.citations.length > 0, true);
+    assert.equal(rankingStep?.status, "completed");
+    await assertNoMemoryWrites(fixture);
+  } finally {
+    fixture.close();
+  }
+});
+
 test("research reports are persisted with exact workspace isolation", async () => {
   const fixture = await createResearchOperationFixture("pap-web-research-workspaces-");
 
@@ -413,6 +467,268 @@ test("research history operations filter, paginate, summarize, and fail safely",
   }
 });
 
+test("report feedback operations upsert, retrieve, and enforce workspace isolation", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-report-feedback-");
+
+  try {
+    const researchResult = await runResearchOperation(fixture.state, researchRequest());
+    assert.equal(researchResult.ok, true);
+    const reportId = researchResult.ok ? researchResult.reportId : "research_report_missing";
+
+    const upserted = await upsertReportFeedbackOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+      rating: "useful",
+      useful: true,
+      reason: "Well-sourced report.",
+      notes: "Will use for follow-up.",
+    });
+
+    assert.equal(upserted.ok, true);
+    assert.equal(upserted.ok && upserted.data.rating, "useful");
+    assert.equal(upserted.ok && upserted.data.useful, true);
+    assert.equal(upserted.ok && upserted.data.reason, "Well-sourced report.");
+
+    const retrieved = await getReportFeedbackOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+    });
+
+    assert.equal(retrieved.ok, true);
+    assert.equal(retrieved.ok && retrieved.data.rating, "useful");
+
+    const updated = await upsertReportFeedbackOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+      rating: "neutral",
+      useful: false,
+      reason: null,
+      notes: "Re-evaluated.",
+    });
+
+    assert.equal(updated.ok, true);
+    assert.equal(updated.ok && updated.data.rating, "neutral");
+    assert.equal(updated.ok && updated.data.useful, false);
+    assert.equal(updated.ok && updated.data.reason, null);
+
+    const wrongWorkspace = await getReportFeedbackOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceBetaId,
+    });
+
+    assert.equal(wrongWorkspace.ok, true);
+    assert.equal(wrongWorkspace.ok && wrongWorkspace.data, null);
+  } finally {
+    fixture.close();
+  }
+});
+
+test("research report export operation preserves citations, sources, and limitations safely", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-research-export-");
+
+  try {
+    const researchResult = await runResearchOperation(fixture.state, researchRequest());
+    assert.equal(researchResult.ok, true);
+    const reportId = researchResult.ok ? researchResult.reportId : "research_report_missing";
+
+    const markdown = await exportResearchReportOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+      format: "markdown",
+    });
+    const plainText = await exportResearchReportOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+      format: "plain-text",
+    });
+    const json = await exportResearchReportOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+      format: "json",
+    });
+    const wrongWorkspace = await exportResearchReportOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceBetaId,
+      format: "markdown",
+    });
+    const invalid = await exportResearchReportOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+      format: "pdf",
+    });
+    const persistedReport = await fixture.state.reportRepository.getById({
+      id: reportId,
+      workspaceId: workspaceAlphaId,
+    });
+    assert.ok(persistedReport);
+    const exportDate = (persistedReport.completedAt ?? persistedReport.createdAt).slice(0, 10);
+
+    assert.equal(markdown.ok, true);
+    assert.equal(markdown.ok && markdown.mimeType, "text/markdown; charset=utf-8");
+    assert.equal(markdown.ok && markdown.filename, `research-${reportId}-${exportDate}.md`);
+    assert.match(markdown.ok ? markdown.content : "", /## Sources \(1\)/u);
+    assert.match(markdown.ok ? markdown.content : "", /## Citations \(\d+\)/u);
+    assert.match(markdown.ok ? markdown.content : "", /## Limitations \(\d+\)/u);
+    assert.match(markdown.ok ? markdown.content : "", /coverage_note/u);
+    assert.match(markdown.ok ? markdown.content : "", /\[C1\]/u);
+
+    assert.equal(plainText.ok, true);
+    assert.equal(plainText.ok && plainText.mimeType, "text/plain; charset=utf-8");
+    assert.equal(plainText.ok && plainText.filename, `research-${reportId}-${exportDate}.txt`);
+    assert.match(plainText.ok ? plainText.content : "", /Sources \(1\)/u);
+    assert.match(plainText.ok ? plainText.content : "", /Limitations \(\d+\)/u);
+
+    assert.equal(json.ok, true);
+    assert.equal(json.ok && json.mimeType, "application/json; charset=utf-8");
+    assert.equal(json.ok && json.filename, `research-${reportId}-${exportDate}.json`);
+    const parsed = JSON.parse(json.ok ? json.content : "{}");
+    assert.deepEqual(parsed, persistedReport);
+    assert.equal(parsed.id, reportId);
+    assert.deepEqual(parsed.summary.keyPoints, persistedReport.summary.keyPoints);
+    assert.equal(parsed.findings[0].id, persistedReport.findings[0].id);
+    assert.equal(parsed.findings[0].kind, persistedReport.findings[0].kind);
+    assert.equal(parsed.citations[0].evidenceId, persistedReport.citations[0].evidenceId);
+    assert.deepEqual(parsed.sources[0].analysis, persistedReport.sources[0].analysis);
+    assert.equal(parsed.sources[0].selectionRank, persistedReport.sources[0].selectionRank);
+    assert.equal(parsed.sources[0].createdAt, persistedReport.sources[0].createdAt);
+    assert.equal(parsed.sources.length, 1);
+    assert.equal(parsed.limitations.length > 0, true);
+    assert.equal("rawProviderOutput" in parsed, false);
+    assert.equal("reasoning" in parsed, false);
+    assert.equal("stack" in parsed, false);
+
+    assert.equal(wrongWorkspace.ok, false);
+    assert.equal(
+      wrongWorkspace.ok === false && wrongWorkspace.error.code,
+      "RESEARCH_EXPORT_REPORT_NOT_FOUND",
+    );
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.ok === false && invalid.error.code, "RESEARCH_EXPORT_INPUT_INVALID");
+  } finally {
+    fixture.close();
+  }
+});
+
+test("source feedback operations create, list, update, and delete feedback", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-source-feedback-");
+
+  try {
+    const researchResult = await runResearchOperation(fixture.state, researchRequest());
+    assert.equal(researchResult.ok, true);
+    const reportId = researchResult.ok ? researchResult.reportId : "research_report_missing";
+    const executionId = researchResult.ok ? researchResult.executionId : "exec_missing";
+
+    const sources = await fixture.sourceRepository.listByExecution({
+      executionId,
+      workspaceId: workspaceAlphaId,
+    });
+    assert.equal(sources.length > 0, true);
+    const sourceId = sources[0].id;
+
+    const created = await createSourceFeedbackOperation(fixture.state, {
+      workspaceId: workspaceAlphaId,
+      reportId,
+      sourceId,
+      rating: "useful",
+      helpful: true,
+      reason: "Accurate claims.",
+      notes: "Best source for this topic.",
+    });
+
+    assert.equal(created.ok, true);
+    assert.equal(created.ok && created.data.sourceId, sourceId);
+    assert.equal(created.ok && created.data.rating, "useful");
+    assert.equal(created.ok && created.data.helpful, true);
+
+    const listed = await listSourceFeedbackOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+    });
+
+    assert.equal(listed.ok, true);
+    assert.equal(listed.ok && listed.data.length, 1);
+    assert.equal(listed.ok && listed.data[0].sourceId, sourceId);
+
+    const updated = await updateSourceFeedbackOperation(fixture.state, {
+      sourceId,
+      workspaceId: workspaceAlphaId,
+      rating: "neutral",
+      notes: "Revised after closer inspection.",
+    });
+
+    assert.equal(updated.ok, true);
+    assert.equal(updated.ok && updated.data.rating, "neutral");
+    assert.equal(updated.ok && updated.data.notes, "Revised after closer inspection.");
+    assert.equal(updated.ok && updated.data.reason, "Accurate claims.");
+
+    const deleted = await deleteSourceFeedbackOperation(fixture.state, {
+      sourceId,
+      workspaceId: workspaceAlphaId,
+    });
+
+    assert.equal(deleted.ok, true);
+
+    const afterDelete = await listSourceFeedbackOperation(fixture.state, {
+      reportId,
+      workspaceId: workspaceAlphaId,
+    });
+
+    assert.equal(afterDelete.ok, true);
+    assert.equal(afterDelete.ok && afterDelete.data.length, 0);
+  } finally {
+    fixture.close();
+  }
+});
+
+test("memory proposal operations approve and reject pending proposals", async () => {
+  const fixture = await createResearchOperationFixture("pap-web-memory-proposal-ops-");
+
+  try {
+    const researchResult = await runResearchOperation(
+      fixture.state,
+      researchRequest({ memoryProposalMode: "propose" }),
+    );
+    assert.equal(researchResult.ok, true);
+    assert.equal(researchResult.ok && researchResult.memoryProposalStatus, "pending_review");
+    const executionId = researchResult.ok ? researchResult.executionId : "exec_missing";
+
+    const proposed = await fixture.memoryService.listSemanticMemory({
+      sourceExecutionId: executionId,
+      status: "proposed",
+      limit: 50,
+    });
+    assert.equal(proposed.length, 1);
+    const proposalId = proposed[0].id;
+
+    const approved = await approveSemanticMemoryProposalOperation(
+      { memoryService: fixture.memoryService },
+      { id: proposalId },
+    );
+
+    assert.equal(approved.ok, true);
+    assert.equal(approved.ok && approved.memory.status, "active");
+    assert.equal(approved.ok && approved.memory.supersedesMemoryId, undefined);
+
+    const active = await fixture.memoryService.listSemanticMemory({
+      sourceExecutionId: executionId,
+      status: "active",
+      limit: 50,
+    });
+    assert.equal(active.length, 1);
+    assert.equal(active[0].id, proposalId);
+
+    const rejectResult = await rejectSemanticMemoryProposalOperation(
+      { memoryService: fixture.memoryService },
+      { id: proposalId },
+    );
+
+    assert.equal(rejectResult.ok, false);
+    assert.equal(rejectResult.ok === false && rejectResult.error.code, "MEMORY_INVALID_STATUS");
+  } finally {
+    fixture.close();
+  }
+});
+
 async function createResearchOperationFixture(prefix, rawEnvOverrides = {}) {
   const temporaryDatabase = await createTemporarySqliteDatabase(prefix);
   const rawEnv = {
@@ -432,6 +748,12 @@ async function createResearchOperationFixture(prefix, rawEnvOverrides = {}) {
   const webEvidenceRepository = new SqliteWebEvidenceRepository(connection.db);
   const researchReportRepository = new SqliteResearchReportRepository(connection.db);
   const researchSourceRepository = new SqliteResearchSourceRepository(connection.db);
+  const researchReportFeedbackRepository = new SqliteResearchReportFeedbackRepository(
+    connection.db,
+  );
+  const researchSourceFeedbackRepository = new SqliteResearchSourceFeedbackRepository(
+    connection.db,
+  );
   const memoryService = createMemoryService({
     semanticMemoryRepository,
     episodicMemoryRepository,
@@ -487,6 +809,8 @@ async function createResearchOperationFixture(prefix, rawEnvOverrides = {}) {
       runtime,
       reportRepository: researchReportRepository,
       memoryService,
+      reportFeedbackRepository: researchReportFeedbackRepository,
+      sourceFeedbackRepository: researchSourceFeedbackRepository,
     },
     traceRepository,
     sourceRepository: researchSourceRepository,

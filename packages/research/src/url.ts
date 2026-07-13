@@ -16,6 +16,7 @@ const trackingParameterNames = new Set([
   "mc_cid",
   "mc_eid",
   "igshid",
+  "srsltid",
 ]);
 
 export function canonicalizeResearchUrl(url: string): string {

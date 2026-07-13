@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import {
   createSourceFeedbackOperation,
   deleteSourceFeedbackOperation,
+  exportResearchReportOperation,
   getResearchReportDashboardOperation,
   getResearchReportOperation,
   getReportFeedbackOperation,
@@ -39,6 +40,12 @@ export const getResearchReport = createServerFn({ method: "GET" })
   .validator((input: unknown) => input)
   .handler(async ({ data }) =>
     withResearchState((state) => getResearchReportOperation(state, data)),
+  );
+
+export const exportResearchReport = createServerFn({ method: "POST" })
+  .validator((input: unknown) => input)
+  .handler(async ({ data }) =>
+    withResearchState((state) => exportResearchReportOperation(state, data)),
   );
 
 export const upsertReportFeedback = createServerFn({ method: "POST" })

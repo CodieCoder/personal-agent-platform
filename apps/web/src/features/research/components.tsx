@@ -2,6 +2,8 @@ import { type FormEvent, useCallback, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import type {
   ResearchCitation,
+  ResearchExportFormat,
+  ResearchExportResult,
   ResearchFinding,
   ResearchReport,
   ResearchReportFeedback,
@@ -23,9 +25,11 @@ import type {
   ResearchReportHistoryResult,
   ResearchReportListResult,
 } from "./types";
+import type { SafeWebError } from "../executions/types";
 import {
   createSourceFeedback,
   deleteSourceFeedback,
+  exportResearchReport,
   updateSourceFeedback,
   upsertReportFeedback,
 } from "./server";
@@ -524,6 +528,7 @@ export function ResearchReportDetail({
         </div>
       </section>
 
+      <ResearchExportPanel report={report} />
       <ReportFeedbackPanel report={report} reportFeedback={reportFeedback} />
       <MemoryProposalPanel memory={memory} />
       <FindingsPanel citations={report.citations} findings={report.findings} />
@@ -538,6 +543,149 @@ export function ResearchReportDetail({
       <CitationsPanel citations={report.citations} />
     </div>
   );
+}
+
+function ResearchExportPanel({ report }: { report: ResearchReport }) {
+  const [activeFormat, setActiveFormat] = useState<ResearchExportFormat | null>(null);
+  const [content, setContent] = useState("");
+  const [mimeType, setMimeType] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState<SafeWebError | null>(null);
+  const [submitting, setSubmitting] = useState<ResearchExportFormat | null>(null);
+
+  const handleExport = useCallback(
+    async (format: ResearchExportFormat) => {
+      setSubmitting(format);
+      setError(null);
+      setStatus("");
+
+      try {
+        const result = await exportResearchReport({
+          data: {
+            reportId: report.id,
+            workspaceId: report.workspaceId,
+            format,
+          },
+        });
+
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+
+        setActiveFormat(format);
+        setContent(result.content);
+        setMimeType(result.mimeType);
+
+        if (format === "plain-text") {
+          await navigator.clipboard.writeText(result.content);
+          setStatus("Plain text copied to clipboard.");
+        } else {
+          triggerResearchDownload(result);
+          setStatus(`${exportFormatLabel(format)} download started.`);
+        }
+      } catch {
+        setError({
+          code: "RESEARCH_EXPORT_BROWSER_FAILED",
+          message:
+            format === "plain-text"
+              ? "Plain text could not be copied. Check clipboard permission and try again."
+              : `${exportFormatLabel(format)} could not be downloaded. Check browser download permissions and try again.`,
+        });
+      } finally {
+        setSubmitting(null);
+      }
+    },
+    [report.id, report.workspaceId],
+  );
+
+  return (
+    <section className="detail-panel" aria-labelledby="research-export-title">
+      <div className="section-heading">
+        <h2 id="research-export-title">Export</h2>
+        <span>{activeFormat ? exportFormatLabel(activeFormat) : "ready"}</span>
+      </div>
+      <div className="compact-fields">
+        <button
+          aria-busy={submitting === "plain-text"}
+          className="secondary-button"
+          disabled={submitting !== null}
+          onClick={() => handleExport("plain-text")}
+          type="button"
+        >
+          Copy plain text
+        </button>
+        <button
+          aria-busy={submitting === "markdown"}
+          className="secondary-button"
+          disabled={submitting !== null}
+          onClick={() => handleExport("markdown")}
+          type="button"
+        >
+          Download Markdown
+        </button>
+        <button
+          aria-busy={submitting === "json"}
+          className="secondary-button"
+          disabled={submitting !== null}
+          onClick={() => handleExport("json")}
+          type="button"
+        >
+          Download JSON
+        </button>
+      </div>
+      {status ? (
+        <p aria-live="polite" className="trace-meta">
+          {status}
+        </p>
+      ) : null}
+      {content ? (
+        <div className="field-grid">
+          <label htmlFor="research-export-content">Export content</label>
+          <textarea
+            className="compact-input"
+            id="research-export-content"
+            readOnly
+            rows={8}
+            value={content}
+          />
+          <pre className="json-block" data-research-export-content="true">
+            {content}
+          </pre>
+          {mimeType ? <span className="trace-meta">{mimeType}</span> : null}
+        </div>
+      ) : null}
+      {error ? <SafeError error={error} /> : null}
+    </section>
+  );
+}
+
+function triggerResearchDownload(result: ResearchExportResult): void {
+  const blob = new Blob([result.content], { type: result.mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  try {
+    link.href = objectUrl;
+    link.download = result.filename;
+    link.style.display = "none";
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function exportFormatLabel(format: ResearchExportFormat): string {
+  switch (format) {
+    case "markdown":
+      return "Markdown";
+    case "json":
+      return "JSON";
+    case "plain-text":
+      return "Plain text";
+  }
 }
 
 function FindingsPanel({
@@ -853,7 +1001,15 @@ function SourceFeedbackControl({
     } finally {
       setSubmitting(false);
     }
-  }, [router, source.id, source.reportId, source.workspaceId, localRating, localHelpful, localNotes]);
+  }, [
+    router,
+    source.id,
+    source.reportId,
+    source.workspaceId,
+    localRating,
+    localHelpful,
+    localNotes,
+  ]);
 
   const handleUpdate = useCallback(async () => {
     setSubmitting(true);
@@ -1074,14 +1230,14 @@ function MemoryProposalPanel({ memory }: { memory: ResearchMemoryStatusSummary }
       </p>
       {memory.records.length > 0 ? (
         <div className="pill-row">
-          {memory.records.map((record) => (
+          {memory.records.map((detail) => (
             <Link
               className="text-link"
-              key={record.id}
-              params={{ memoryId: record.id }}
+              key={detail.record.id}
+              params={{ memoryId: detail.record.id }}
               to="/memory/$memoryId"
             >
-              {record.status}
+              {detail.record.status}
             </Link>
           ))}
         </div>

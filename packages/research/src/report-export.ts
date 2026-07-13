@@ -1,4 +1,8 @@
-import type { ResearchExportPlainTextInput } from "@pap/contracts";
+import {
+  researchReportSchema,
+  type ResearchExportPlainTextInput,
+  type ResearchReport,
+} from "@pap/contracts";
 
 export type ReportExportData = ResearchExportPlainTextInput;
 
@@ -34,6 +38,7 @@ export function generatePlainTextExport(data: ReportExportData): string {
     lines.push(`${"-".repeat(60)}`);
     for (let i = 0; i < data.findings.length; i++) {
       const finding = data.findings[i];
+      if (!finding) continue;
       const idx = i + 1;
       lines.push(`${idx}. ${finding.title}`);
       lines.push(`   ${finding.claimText}`);
@@ -41,9 +46,7 @@ export function generatePlainTextExport(data: ReportExportData): string {
       if (finding.citationIds.length > 0) {
         const citationRefs = finding.citationIds
           .map((citationId) => {
-            const citationIndex = data.citations.findIndex(
-              (c) => c.citationId === citationId,
-            );
+            const citationIndex = data.citations.findIndex((c) => c.citationId === citationId);
             return citationIndex >= 0 ? `[C${citationIndex + 1}]` : `[${citationId}]`;
           })
           .join(", ");
@@ -58,6 +61,7 @@ export function generatePlainTextExport(data: ReportExportData): string {
     lines.push(`${"-".repeat(60)}`);
     for (let i = 0; i < data.sources.length; i++) {
       const source = data.sources[i];
+      if (!source) continue;
       const idx = i + 1;
       lines.push(`S${idx}. ${source.title ?? source.url}`);
       lines.push(`    URL: ${source.finalUrl ?? source.url}`);
@@ -74,6 +78,7 @@ export function generatePlainTextExport(data: ReportExportData): string {
     lines.push(`${"-".repeat(60)}`);
     for (let i = 0; i < data.citations.length; i++) {
       const citation = data.citations[i];
+      if (!citation) continue;
       const idx = i + 1;
       lines.push(`C${idx}. Source: ${citation.sourceTitle}`);
       lines.push(`    URL: ${citation.sourceUrl}`);
@@ -103,7 +108,7 @@ export function generatePlainTextExport(data: ReportExportData): string {
     lines.push("");
   }
 
-  return lines.join("\n").trim() + "\n";
+  return `${lines.join("\n").trim()}\n`;
 }
 
 /**
@@ -140,6 +145,7 @@ export function generateMarkdownExport(data: ReportExportData): string {
     lines.push("");
     for (let i = 0; i < data.findings.length; i++) {
       const finding = data.findings[i];
+      if (!finding) continue;
       const idx = i + 1;
       lines.push(`### ${idx}. ${escapeMarkdownInline(finding.title)}`);
       lines.push("");
@@ -149,9 +155,7 @@ export function generateMarkdownExport(data: ReportExportData): string {
       if (finding.citationIds.length > 0) {
         const citationRefs = finding.citationIds
           .map((citationId) => {
-            const citationIndex = data.citations.findIndex(
-              (c) => c.citationId === citationId,
-            );
+            const citationIndex = data.citations.findIndex((c) => c.citationId === citationId);
             return citationIndex >= 0 ? `[C${citationIndex + 1}]` : `[${citationId}]`;
           })
           .join(", ");
@@ -166,9 +170,12 @@ export function generateMarkdownExport(data: ReportExportData): string {
     lines.push("");
     for (let i = 0; i < data.sources.length; i++) {
       const source = data.sources[i];
+      if (!source) continue;
       const idx = i + 1;
       const displayUrl = source.finalUrl ?? source.url;
-      lines.push(`### S${idx}. ${source.title ? escapeMarkdownInline(source.title) : escapeMarkdownInline(displayUrl)}`);
+      lines.push(
+        `### S${idx}. ${source.title ? escapeMarkdownInline(source.title) : escapeMarkdownInline(displayUrl)}`,
+      );
       lines.push("");
       lines.push(`- **URL:** <${displayUrl}>`);
       if (source.relevanceScore !== null) {
@@ -184,6 +191,7 @@ export function generateMarkdownExport(data: ReportExportData): string {
     lines.push("");
     for (let i = 0; i < data.citations.length; i++) {
       const citation = data.citations[i];
+      if (!citation) continue;
       const idx = i + 1;
       lines.push(`### C${idx}. ${escapeMarkdownInline(citation.sourceTitle)}`);
       lines.push("");
@@ -201,10 +209,10 @@ export function generateMarkdownExport(data: ReportExportData): string {
   if (data.warnings.length > 0) {
     lines.push(`## Warnings (${data.warnings.length})`);
     lines.push("");
-    warnLoop: for (const warning of data.warnings) {
+    for (const warning of data.warnings) {
       const combined = `[${warning.code}] ${warning.message}`;
       if (combined.length > 500) {
-        continue warnLoop;
+        continue;
       }
       lines.push(`- **${warning.code}:** ${escapeMarkdownInline(warning.message)}`);
     }
@@ -224,7 +232,7 @@ export function generateMarkdownExport(data: ReportExportData): string {
     lines.push("");
   }
 
-  return lines.join("\n").trim() + "\n";
+  return `${lines.join("\n").trim()}\n`;
 }
 
 /**
@@ -233,51 +241,9 @@ export function generateMarkdownExport(data: ReportExportData): string {
  * Does not include hidden reasoning, raw provider output, credentials,
  * cookies, or stack traces.
  */
-export function generateJsonExport(data: ReportExportData): string {
-  const exportObject = {
-    reportId: data.reportId,
-    executionId: data.executionId,
-    question: data.question,
-    workspaceId: data.workspaceId,
-    generatedAt: new Date().toISOString(),
-    timestamps: {
-      createdAt: data.createdAt,
-      completedAt: data.completedAt,
-    },
-    summary: data.summaryText,
-    findings: data.findings.map((finding) => ({
-      title: finding.title,
-      claimText: finding.claimText,
-      confidence: finding.confidence,
-      citationIds: finding.citationIds,
-    })),
-    sources: data.sources.map((source) => ({
-      id: source.id,
-      title: source.title,
-      url: source.url,
-      finalUrl: source.finalUrl,
-      relevanceScore: source.relevanceScore,
-      status: source.status,
-    })),
-    citations: data.citations.map((citation) => ({
-      citationId: citation.citationId,
-      sourceId: citation.sourceId,
-      sourceTitle: citation.sourceTitle,
-      sourceUrl: citation.sourceUrl,
-      claimText: citation.claimText,
-      sourceExcerpt: citation.sourceExcerpt,
-    })),
-    warnings: data.warnings.map((warning) => ({
-      code: warning.code,
-      message: warning.message,
-    })),
-    limitations: data.limitations.map((limitation) => ({
-      code: limitation.code,
-      message: limitation.message,
-    })),
-  };
-
-  return JSON.stringify(exportObject, null, 2) + "\n";
+export function generateJsonExport(report: ResearchReport): string {
+  const safePersistedReport = researchReportSchema.parse(report);
+  return `${JSON.stringify(safePersistedReport, null, 2)}\n`;
 }
 
 function formatIsoTimestamp(isoTimestamp: string): string {

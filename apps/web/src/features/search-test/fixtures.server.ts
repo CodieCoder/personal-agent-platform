@@ -176,13 +176,12 @@ const fixtureFetch: WebFetchTransport = async (input) => {
   }
 
   if (url.pathname === "/articles/plain-status") {
-    const body =
-      "Plain text extraction remains deterministic for PAP fixtures when HTML is not available.";
+    const body = plainStatusArticleHtml();
 
     return new Response(body, {
       status: 200,
       headers: {
-        "content-type": "text/plain",
+        "content-type": "text/html; charset=utf-8",
         "content-length": String(Buffer.byteLength(body)),
       },
     });
@@ -231,6 +230,33 @@ function fixtureResults(): SearchResult[] {
       score: 0.2,
     },
   ];
+}
+
+function plainStatusArticleHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <title>Plain text fixture status</title>
+    <link rel="canonical" href="https://pap-fixture.example/articles/plain-status" />
+    <meta property="og:site_name" content="PAP Fixture Review" />
+    <meta name="description" content="A secondary deterministic fixture for research tests." />
+  </head>
+  <body>
+    <article>
+      <h1>Plain text fixture status</h1>
+      <p>
+        Plain text extraction remains deterministic for Personal Agent Platform fixtures when
+        external websites are not available. The secondary source describes local-first research
+        runs, guarded network access, and workspace-scoped evidence review for repeatable tests.
+      </p>
+      <p>
+        It gives automated research flows enough readable article text to exercise multi-source
+        ranking without contacting public websites. The content intentionally repeats the ideas of
+        bounded source handling, provenance, and deterministic report evidence.
+      </p>
+    </article>
+  </body>
+</html>`;
 }
 
 function fixtureArticleHtml(): string {

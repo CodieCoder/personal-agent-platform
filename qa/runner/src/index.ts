@@ -7,11 +7,17 @@ import {
   runMigrations,
   SqliteEpisodicMemoryRepository,
   SqliteExecutionTraceRepository,
+  SqliteResearchReportFeedbackRepository,
+  SqliteResearchReportRepository,
+  SqliteResearchSourceFeedbackRepository,
+  SqliteResearchSourceRepository,
   SqliteSemanticMemoryRepository,
+  SqliteWebEvidenceRepository,
   SqliteWorkspaceRepository,
 } from "../../../packages/storage-sqlite/src/index.js";
 import { createMemoryService } from "../../../packages/memory/src/index.js";
 import { compileGherkin, runSuiteTool, type RunSuiteOutput } from "@qutecoder/qa-intel";
+import { resolveProviderMode, shouldRunFeature, type QaProviderMode } from "./config.js";
 
 const suiteName = "pap-behavior";
 const port = 3101;
@@ -21,7 +27,6 @@ const artifactDirectory = resolve(".qa-results/artifacts");
 const resultsDatabasePath = resolve(".qa-results/results.db");
 const resultDirectory = resolve("qa/results");
 
-type QaProviderMode = "live" | "fixture";
 type QaAppEnvironment = "local" | "test" | "self_hosted" | "production";
 
 type QaRunEnvironment = {
@@ -192,18 +197,6 @@ async function listFeaturePaths(providerMode: QaProviderMode): Promise<string[]>
     .map((entry) => join(featureDirectory, entry));
 }
 
-function shouldRunFeature(input: { entry: string; providerMode: QaProviderMode }): boolean {
-  if (input.entry.endsWith(".fixture.feature")) {
-    return input.providerMode === "fixture";
-  }
-
-  if (input.entry.endsWith(".live.feature")) {
-    return input.providerMode === "live";
-  }
-
-  return true;
-}
-
 function startWebServer(input: {
   dataDir: string;
   databaseUrl: string;
@@ -237,20 +230,6 @@ function startWebServer(input: {
   server.stdout.on("data", consumeServerOutput);
   server.stderr.on("data", consumeServerOutput);
   return server;
-}
-
-function resolveProviderMode(value: string | undefined): QaProviderMode {
-  if (value === undefined || value.trim() === "") {
-    return "live";
-  }
-
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized === "live" || normalized === "fixture") {
-    return normalized;
-  }
-
-  throw new Error("PAP_QA_PROVIDER_MODE must be 'live' or 'fixture'.");
 }
 
 function resolveAppEnvironment(input: {
@@ -302,6 +281,15 @@ async function seedQaFixtures(databaseUrl: string): Promise<void> {
   const workspaceRepository = new SqliteWorkspaceRepository(connection.db);
   const semanticMemoryRepository = new SqliteSemanticMemoryRepository(connection.db);
   const episodicMemoryRepository = new SqliteEpisodicMemoryRepository(connection.db);
+  const researchReportRepository = new SqliteResearchReportRepository(connection.db);
+  const researchSourceRepository = new SqliteResearchSourceRepository(connection.db);
+  const researchReportFeedbackRepository = new SqliteResearchReportFeedbackRepository(
+    connection.db,
+  );
+  const researchSourceFeedbackRepository = new SqliteResearchSourceFeedbackRepository(
+    connection.db,
+  );
+  const webEvidenceRepository = new SqliteWebEvidenceRepository(connection.db);
   const memoryService = createMemoryService({
     semanticMemoryRepository,
     episodicMemoryRepository,
@@ -349,9 +337,332 @@ async function seedQaFixtures(databaseUrl: string): Promise<void> {
       sourceCapabilityId: "capability.echo",
       evidenceRefs: [{ executionId: "exec_qa_history_visible" }],
     });
+    await seedQaResearchFixtures({
+      memoryService,
+      researchReportFeedbackRepository,
+      researchReportRepository,
+      researchSourceFeedbackRepository,
+      researchSourceRepository,
+      traceRepository,
+      webEvidenceRepository,
+    });
   } finally {
     connection.close();
   }
+}
+
+async function seedQaResearchFixtures(input: {
+  memoryService: ReturnType<typeof createMemoryService>;
+  researchReportFeedbackRepository: SqliteResearchReportFeedbackRepository;
+  researchReportRepository: SqliteResearchReportRepository;
+  researchSourceFeedbackRepository: SqliteResearchSourceFeedbackRepository;
+  researchSourceRepository: SqliteResearchSourceRepository;
+  traceRepository: SqliteExecutionTraceRepository;
+  webEvidenceRepository: SqliteWebEvidenceRepository;
+}): Promise<void> {
+  const warning = await seedResearchReport(input, {
+    completedAt: "2026-07-02T10:05:00.000Z",
+    executionId: "exec_qa_research_warning",
+    findingClaim: "QA cited finding stays linked to source evidence.",
+    findingId: "research_finding_qa_warning",
+    findingTitle: "QA cited finding",
+    limitationCode: "qa_warning_limitation",
+    limitationMessage: "QA warning limitation remains visible for review.",
+    question: "QA warning research report",
+    reportId: "research_report_qa_warning",
+    sourceId: "research_source_qa_primary",
+    sourceTitle: "QA primary source",
+    startedAt: "2026-07-02T10:00:00.000Z",
+    warningMessage: "QA partial source failure remains visible.",
+    workspaceId: "workspace_qa_alpha",
+  });
+
+  await input.researchReportFeedbackRepository.upsert({
+    reportId: warning.report.id,
+    workspaceId: "workspace_qa_alpha",
+    rating: "useful",
+    useful: true,
+    reason: "The warning report is clear.",
+    notes: "Seeded QA report feedback remains visible.",
+  });
+  await input.researchSourceFeedbackRepository.create({
+    reportId: warning.report.id,
+    sourceId: warning.source.id,
+    workspaceId: "workspace_qa_alpha",
+    rating: "useful",
+    helpful: true,
+    reason: "The source supports the cited finding.",
+    notes: "Seeded QA source feedback remains visible.",
+  });
+
+  await input.memoryService.proposeSemanticMemory({
+    id: "memory_qa_research_proposal",
+    scope: "workspace",
+    workspaceId: "workspace_qa_alpha",
+    subject: "qa.research.memory",
+    predicate: "supports",
+    value: "QA cited research can become reviewed semantic memory.",
+    sourceType: "research_report",
+    sourceRef: warning.report.id,
+    sourceExecutionId: warning.report.executionId,
+    sourceCapabilityId: "capability.research",
+    evidenceRefs: [{ reportId: warning.report.id, sourceId: warning.source.id }],
+    confidence: 0.91,
+    sensitivity: "low",
+  });
+  await input.memoryService.createSemanticMemory({
+    id: "memory_qa_research_active_conflict",
+    scope: "workspace",
+    workspaceId: "workspace_qa_alpha",
+    subject: "qa.research.memory",
+    predicate: "supports",
+    value: "Existing active QA research memory for conflict display.",
+    sourceType: "manual",
+    sourceRef: "qa-seed",
+    evidenceRefs: [{ reportId: warning.report.id }],
+    confidence: 0.72,
+    sensitivity: "low",
+  });
+
+  await seedResearchReport(input, {
+    completedAt: "2026-07-02T11:05:00.000Z",
+    executionId: "exec_qa_research_feedback",
+    findingClaim: "QA feedback finding stays unchanged.",
+    findingId: "research_finding_qa_feedback",
+    findingTitle: "QA feedback finding",
+    limitationCode: "qa_feedback_limitation",
+    limitationMessage: "QA feedback limitation remains visible.",
+    question: "QA feedback research report",
+    reportId: "research_report_qa_feedback",
+    sourceId: "research_source_qa_feedback_primary",
+    sourceTitle: "QA feedback source",
+    startedAt: "2026-07-02T11:00:00.000Z",
+    workspaceId: "workspace_qa_alpha",
+  });
+
+  await seedResearchReport(input, {
+    completedAt: "2026-07-02T12:05:00.000Z",
+    executionId: "exec_qa_research_export",
+    findingClaim: "QA export finding keeps citations, sources, and limitations together.",
+    findingId: "research_finding_qa_export",
+    findingTitle: "QA export finding",
+    limitationCode: "qa_export_limitation",
+    limitationMessage: "QA export limitation remains visible for review.",
+    question: "QA export-ready research report",
+    reportId: "research_report_qa_export",
+    sourceId: "research_source_qa_export_primary",
+    sourceTitle: "QA export source",
+    startedAt: "2026-07-02T12:00:00.000Z",
+    workspaceId: "workspace_qa_alpha",
+  });
+
+  const beta = await seedResearchReport(input, {
+    completedAt: "2026-07-02T13:05:00.000Z",
+    executionId: "exec_qa_research_beta",
+    findingClaim: "QA beta warning report must stay isolated.",
+    findingId: "research_finding_qa_beta",
+    findingTitle: "QA beta finding",
+    limitationCode: "qa_beta_limitation",
+    limitationMessage: "QA beta limitation should remain hidden from alpha.",
+    question: "QA beta warning research report",
+    reportId: "research_report_qa_beta_warning",
+    sourceId: "research_source_qa_beta_primary",
+    sourceTitle: "QA beta source",
+    startedAt: "2026-07-02T13:00:00.000Z",
+    warningMessage: "QA beta warning should not leak into alpha.",
+    workspaceId: "workspace_qa_beta",
+  });
+  await input.memoryService.proposeSemanticMemory({
+    id: "memory_qa_research_beta_proposal",
+    scope: "workspace",
+    workspaceId: "workspace_qa_beta",
+    subject: "qa.research.beta",
+    predicate: "hidden",
+    value: "Beta proposal must remain scoped to beta.",
+    sourceType: "research_report",
+    sourceRef: beta.report.id,
+    sourceExecutionId: beta.report.executionId,
+    sourceCapabilityId: "capability.research",
+    evidenceRefs: [{ reportId: beta.report.id, sourceId: beta.source.id }],
+    confidence: 0.88,
+    sensitivity: "low",
+  });
+}
+
+async function seedResearchReport(
+  input: {
+    researchReportRepository: SqliteResearchReportRepository;
+    researchSourceRepository: SqliteResearchSourceRepository;
+    traceRepository: SqliteExecutionTraceRepository;
+    webEvidenceRepository: SqliteWebEvidenceRepository;
+  },
+  fixture: {
+    completedAt: string;
+    executionId: string;
+    findingClaim: string;
+    findingId: string;
+    findingTitle: string;
+    limitationCode: string;
+    limitationMessage: string;
+    question: string;
+    reportId: string;
+    sourceId: string;
+    sourceTitle: string;
+    startedAt: string;
+    warningMessage?: string;
+    workspaceId: string;
+  },
+) {
+  const citationId = `${fixture.reportId}_citation`;
+  const evidenceId = `${fixture.sourceId}_evidence`;
+  const sourceUrl = `https://pap-fixture.example/articles/${fixture.sourceId}`;
+
+  await seedResearchTrace(input.traceRepository, {
+    id: fixture.executionId,
+    workspaceId: fixture.workspaceId,
+    startedAt: fixture.startedAt,
+    completedAt: fixture.completedAt,
+  });
+
+  await input.researchReportRepository.create({
+    id: fixture.reportId,
+    executionId: fixture.executionId,
+    workspaceId: fixture.workspaceId,
+    question: fixture.question,
+    summary: {
+      text: `${fixture.question} summary for QA-Intel review.`,
+      keyPoints: [fixture.findingClaim],
+    },
+    status: "running",
+    createdAt: fixture.startedAt,
+  });
+
+  await input.webEvidenceRepository.createExtraction({
+    id: evidenceId,
+    executionId: fixture.executionId,
+    workspaceId: fixture.workspaceId,
+    finalUrl: sourceUrl,
+    status: "completed",
+    extractionMethod: "readability",
+    title: fixture.sourceTitle,
+    excerpt: `${fixture.sourceTitle} excerpt for QA review.`,
+    wordCount: 120,
+    contentTextSnapshot: `${fixture.sourceTitle} supports: ${fixture.findingClaim}`,
+    contentTextSha256: "0".repeat(64),
+    contentChars: 120,
+    originalContentChars: 120,
+    startedAt: fixture.startedAt,
+    completedAt: fixture.completedAt,
+    durationMs: 100,
+    createdAt: fixture.startedAt,
+  });
+
+  const source = await input.researchSourceRepository.create({
+    id: fixture.sourceId,
+    reportId: fixture.reportId,
+    executionId: fixture.executionId,
+    workspaceId: fixture.workspaceId,
+    evidenceId,
+    url: sourceUrl,
+    finalUrl: sourceUrl,
+    title: fixture.sourceTitle,
+    selectionRank: 1,
+    relevanceScore: 0.9,
+    status: "analyzed",
+    createdAt: fixture.startedAt,
+    updatedAt: fixture.completedAt,
+  });
+
+  const report = await input.researchReportRepository.replaceContent({
+    id: fixture.reportId,
+    workspaceId: fixture.workspaceId,
+    summary: {
+      text: `${fixture.question} summary for QA-Intel review.`,
+      keyPoints: [fixture.findingClaim],
+    },
+    findings: [
+      {
+        id: fixture.findingId,
+        title: fixture.findingTitle,
+        claimText: fixture.findingClaim,
+        citationIds: [citationId],
+        confidence: 0.9,
+        kind: "sourced_fact",
+      },
+    ],
+    citations: [
+      {
+        citationId,
+        sourceId: fixture.sourceId,
+        sourceTitle: fixture.sourceTitle,
+        sourceUrl,
+        evidenceId,
+        claimText: fixture.findingClaim,
+        sourceExcerpt: `${fixture.sourceTitle} excerpt for QA review.`,
+      },
+    ],
+    limitations: [
+      {
+        code: fixture.limitationCode,
+        message: fixture.limitationMessage,
+      },
+    ],
+    warnings: fixture.warningMessage
+      ? [
+          {
+            code: "partial_source_failure",
+            message: fixture.warningMessage,
+          },
+        ]
+      : [],
+    status: fixture.warningMessage ? "completed_with_warnings" : "completed",
+    completedAt: fixture.completedAt,
+  });
+
+  return { report, source };
+}
+
+async function seedResearchTrace(
+  traceRepository: SqliteExecutionTraceRepository,
+  input: {
+    id: string;
+    workspaceId: string;
+    startedAt: string;
+    completedAt: string;
+  },
+): Promise<void> {
+  await traceRepository.create({
+    id: input.id,
+    capabilityId: "capability.research",
+    workspaceId: input.workspaceId,
+    startedAt: input.startedAt,
+  });
+  await traceRepository.appendStep({
+    id: `${input.id}_plan`,
+    executionId: input.id,
+    sequence: 0,
+    kind: "workflow",
+    name: "plan queries",
+    status: "completed",
+    summary: "Seeded QA-Intel research planning.",
+    startedAt: input.startedAt,
+    completedAt: input.startedAt,
+  });
+  await traceRepository.appendStep({
+    id: `${input.id}_review`,
+    executionId: input.id,
+    sequence: 1,
+    kind: "workflow",
+    name: "persist research report",
+    status: "completed",
+    summary: "Seeded QA-Intel research report persistence.",
+    startedAt: input.completedAt,
+    completedAt: input.completedAt,
+  });
+  await traceRepository.markCompleted({
+    executionId: input.id,
+    completedAt: input.completedAt,
+  });
 }
 
 async function seedTrace(

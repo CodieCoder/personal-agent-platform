@@ -65,7 +65,7 @@ function fixtureStructuredGeneration(
 ): StructuredGenerationResult {
   const output =
     request.responseSchema.id === "research.source-ranking.v1"
-      ? fixtureRankingOutput(request)
+      ? fixtureRankingOutput(request, rawEnv)
       : fixtureAnalysisOutput(request, rawEnv, state);
 
   return structuredGenerationResultSchema.parse({
@@ -82,7 +82,19 @@ function fixtureStructuredGeneration(
   });
 }
 
-function fixtureRankingOutput(request: StructuredGenerationRequest) {
+function fixtureRankingOutput(
+  request: StructuredGenerationRequest,
+  rawEnv: Record<string, string | undefined>,
+) {
+  if (rawEnv.PAP_RESEARCH_TEST_FIXTURE_AI_MODE === "ranking_invalid") {
+    throw new AIProviderError({
+      code: "provider_invalid_response",
+      providerId: request.providerId,
+      message: "Fixture ranking returned malformed JSON.",
+      details: { schemaId: request.responseSchema.id },
+    });
+  }
+
   const parsed = parsePrompt(request.prompt);
   const sources = Array.isArray(parsed.sources) ? parsed.sources : [];
 

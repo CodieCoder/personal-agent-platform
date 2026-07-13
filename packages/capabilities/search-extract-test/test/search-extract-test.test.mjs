@@ -131,6 +131,31 @@ test("search plus extraction execution succeeds with ordered trace and safe evid
   assert.equal(JSON.stringify(trace).includes("<html"), false);
 });
 
+test("search extraction accepts canonically matched selected result URLs", async () => {
+  const harness = createRuntimeHarness();
+  const runtime = harness.createRuntime();
+
+  const result = await runtime.execute({
+    capabilityId: "capability.search-extract-test",
+    input: {
+      query: "local agents",
+      selectedUrl:
+        "https://example.com/article/?utm_source=search&srsltid=tracked-fragment#ignored-section",
+    },
+    source: "cli",
+    workspaceId: "workspace_search",
+  });
+  const trace = await harness.traceRepository.getById(result.executionId);
+  const selectionStep = trace.steps.find((step) => step.name === "select URL");
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.data.selectedResult.index, 0);
+  assert.equal(result.data.document.finalUrl, articleUrl);
+  assert.equal(selectionStep.status, "completed");
+  assert.equal(selectionStep.metadata.selectionSource, "search_result");
+  assert.equal(harness.evidenceRepository.fetches[0].requestedUrl, articleUrl);
+});
+
 test("URL policy failure produces safe failed trace and persists search evidence only", async () => {
   const harness = createRuntimeHarness({
     urlPolicyError: new Error("blocked private network target"),

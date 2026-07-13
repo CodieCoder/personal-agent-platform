@@ -703,47 +703,97 @@ async function rankSources(input: {
     },
   });
 
-  const generation = structuredGenerationResultSchema.parse(
-    await input.context.llm.generateStructured({
-      providerId,
-      model: health.model,
-      systemPrompt: "Rank only the supplied extracted research sources. Return JSON only.",
-      prompt: buildRankingPrompt(input.request, input.extractedSources),
-      responseSchema: {
-        id: rankingResponseSchemaId,
-        description: "Research source relevance ranking.",
-        schema: researchSourceRankingOutputSchema,
-      },
-      temperature: 0,
-      maxTokens: 1_024,
-      timeoutMs: 60_000,
-      keepAlive: null,
+  try {
+    const generation = structuredGenerationResultSchema.parse(
+      await input.context.llm.generateStructured({
+        providerId,
+        model: health.model,
+        systemPrompt: "Rank only the supplied extracted research sources. Return JSON only.",
+        prompt: buildRankingPrompt(input.request, input.extractedSources),
+        responseSchema: {
+          id: rankingResponseSchemaId,
+          description: "Research source relevance ranking.",
+          schema: researchSourceRankingOutputSchema,
+        },
+        temperature: 0,
+        maxTokens: 1_024,
+        timeoutMs: 60_000,
+        keepAlive: null,
+        metadata: {
+          capabilityId: input.context.capability.id,
+          promptTemplateId: rankingPromptTemplateId,
+          reportId: input.report.id,
+        },
+      }),
+    );
+
+    const ranking = validateResearchSourceRankingOutput({
+      output: generation.output,
+      sourceIds: input.extractedSources.map((source) => source.source.id),
+    });
+
+    await input.context.trace.addStep({
+      kind: "workflow",
+      name: "rank relevance",
+      status: "completed",
+      summary: "Validated structured source relevance ranking.",
       metadata: {
-        capabilityId: input.context.capability.id,
-        promptTemplateId: rankingPromptTemplateId,
-        reportId: input.report.id,
+        providerId,
+        sourceCount: input.extractedSources.length,
+        rankedSourceCount: ranking.rankings.length,
       },
-    }),
-  );
+    });
 
-  const ranking = validateResearchSourceRankingOutput({
-    output: generation.output,
-    sourceIds: input.extractedSources.map((source) => source.source.id),
+    return ranking;
+  } catch (error) {
+    if (!isStructuredOutputRetryable(error)) {
+      throw error;
+    }
+
+    const failureCategory = safeFailureCategory(error, "source_ranking_failed");
+    const fallbackRanking = buildFallbackRanking(input.extractedSources);
+
+    input.warnings.push(
+      warning(
+        "source_ranking_fallback_used",
+        "Structured local model ranking failed; sources kept deterministic extraction order.",
+        {
+          providerId,
+          failureCategory,
+          sourceCount: input.extractedSources.length,
+        },
+      ),
+    );
+    await input.context.trace.addStep({
+      kind: "workflow",
+      name: "rank relevance",
+      status: "completed",
+      summary: "Used deterministic source order after invalid structured ranking output.",
+      metadata: {
+        providerId,
+        sourceCount: input.extractedSources.length,
+        rankedSourceCount: fallbackRanking.rankings.length,
+        rankingMode: "deterministic_fallback",
+        failureCategory,
+      },
+    });
+
+    return fallbackRanking;
+  }
+}
+
+function buildFallbackRanking(
+  extractedSources: readonly ExtractedResearchSource[],
+): ResearchSourceRankingOutput {
+  return researchSourceRankingOutputSchema.parse({
+    rankings: extractedSources.map((source, index) => ({
+      sourceId: source.source.id,
+      relevanceScore: Math.max(0.5, 0.9 - index * 0.05),
+      relevanceLabel: index < 2 ? "high" : "medium",
+      reason: "Deterministic fallback kept extracted source order after ranking failed.",
+      recommendedForSynthesis: true,
+    })),
   });
-
-  await input.context.trace.addStep({
-    kind: "workflow",
-    name: "rank relevance",
-    status: "completed",
-    summary: "Validated structured source relevance ranking.",
-    metadata: {
-      providerId,
-      sourceCount: input.extractedSources.length,
-      rankedSourceCount: ranking.rankings.length,
-    },
-  });
-
-  return ranking;
 }
 
 async function analyzeSources(input: {

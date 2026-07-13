@@ -8,6 +8,7 @@ import type {
   ResearchReportListPage,
   ResearchReportStatus,
   ResearchSourceFeedback,
+  ResearchExportResult,
   WorkspaceId,
 } from "@pap/contracts";
 import type { SafeWebError } from "../executions/types";
@@ -107,11 +108,7 @@ export type ResearchMemoryProposalActionResult =
     };
 
 export type ResearchExportActionResult =
-  | {
-      ok: true;
-      content: string;
-      contentType: string;
-    }
+  | ({ ok: true } & ResearchExportResult)
   | {
       ok: false;
       error: SafeWebError;

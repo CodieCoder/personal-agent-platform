@@ -3,8 +3,8 @@ import {
   deleteResearchSourceFeedbackInputSchema,
   getResearchReportFeedbackInputSchema,
   listResearchSourceFeedbackByReportInputSchema,
-  memoryIdSchema,
-  researchExportFormatSchema,
+  researchExportRequestSchema,
+  researchExportResultSchema,
   researchReportDashboardQuerySchema,
   researchReportHistoryQuerySchema,
   researchReportIdSchema,
@@ -15,6 +15,8 @@ import {
   workspaceIdSchema,
   z,
   type ResearchReportStatus,
+  type ResearchExportFormat,
+  type ResearchReport,
   type SemanticMemoryRecord,
 } from "@pap/contracts";
 import { researchCapabilityOutputSchema } from "@pap/capability-research";
@@ -36,7 +38,6 @@ import type {
   ResearchExportActionResult,
   ResearchFeedbackListResult,
   ResearchFeedbackResult,
-  ResearchMemoryProposalActionResult,
   ResearchMemoryProposalDetail,
   ResearchMemoryStatusSummary,
   ResearchReportDashboardResult,
@@ -298,8 +299,10 @@ async function listResearchMemoryStatuses(
     const cacheKey = `${record.subject}:${record.predicate}`;
     let conflictingActive: SemanticMemoryRecord[];
 
-    if (conflictingCache.has(cacheKey)) {
-      conflictingActive = conflictingCache.get(cacheKey)!;
+    const cachedConflictingActive = conflictingCache.get(cacheKey);
+
+    if (cachedConflictingActive) {
+      conflictingActive = cachedConflictingActive;
     } else {
       conflictingActive = await findConflictingActiveMemory(
         state.memoryService,
@@ -327,6 +330,64 @@ async function listResearchMemoryStatuses(
     rejected: rejected.length,
     records,
   };
+}
+
+export async function exportResearchReportOperation(
+  state: ResearchOperationState,
+  input: unknown,
+): Promise<ResearchExportActionResult> {
+  const parsed = researchExportRequestSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return invalidInputResult("RESEARCH_EXPORT_INPUT_INVALID");
+  }
+
+  try {
+    const report = await state.reportRepository.getById({
+      id: parsed.data.reportId,
+      workspaceId: parsed.data.workspaceId,
+    });
+
+    if (!report) {
+      return {
+        ok: false,
+        error: {
+          code: "RESEARCH_EXPORT_REPORT_NOT_FOUND",
+          message: "Research report could not be exported for this ID and workspace scope.",
+        },
+      };
+    }
+
+    const exportResult = researchExportResultSchema.safeParse({
+      reportId: report.id,
+      executionId: report.executionId,
+      format: parsed.data.format,
+      content: generateExportContent(parsed.data.format, report),
+      filename: exportFilename(report, parsed.data.format),
+      mimeType: exportMimeType(parsed.data.format),
+    });
+
+    if (!exportResult.success) {
+      return {
+        ok: false,
+        error: {
+          code: "RESEARCH_EXPORT_RESULT_INVALID",
+          message:
+            "Research report export exceeded the supported size or could not produce valid download metadata.",
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      ...exportResult.data,
+    };
+  } catch (error) {
+    return operationError(error, {
+      code: "RESEARCH_EXPORT_FAILED",
+      message: "Research report export could not be generated.",
+    });
+  }
 }
 
 async function findConflictingActiveMemory(
@@ -378,6 +439,82 @@ function summarizeMemoryStatus(input: {
   }
 
   return input.active > 0 ? "active" : "rejected";
+}
+
+function toReportPresentationData(report: ResearchReport): ReportExportData {
+  return {
+    reportId: report.id,
+    executionId: report.executionId,
+    question: report.question,
+    workspaceId: report.workspaceId,
+    summaryText: report.summary.text,
+    findings: report.findings.map((finding) => ({
+      title: finding.title,
+      claimText: finding.claimText,
+      confidence: finding.confidence,
+      citationIds: finding.citationIds,
+    })),
+    citations: report.citations.map((citation) => ({
+      citationId: citation.citationId,
+      sourceId: citation.sourceId,
+      sourceTitle: citation.sourceTitle,
+      sourceUrl: citation.sourceUrl,
+      claimText: citation.claimText,
+      sourceExcerpt: citation.sourceExcerpt ?? null,
+    })),
+    sources: report.sources.map((source) => ({
+      id: source.id,
+      title: source.title ?? null,
+      url: source.url,
+      finalUrl: source.finalUrl ?? null,
+      relevanceScore: source.relevanceScore ?? null,
+      status: source.status,
+    })),
+    warnings: report.warnings.map((warning) => ({
+      code: warning.code,
+      message: warning.message,
+    })),
+    limitations: report.limitations.map((limitation) => ({
+      code: limitation.code,
+      message: limitation.message,
+    })),
+    completedAt: report.completedAt ?? null,
+    createdAt: report.createdAt,
+  };
+}
+
+function generateExportContent(format: ResearchExportFormat, report: ResearchReport): string {
+  if (format === "json") {
+    return generateJsonExport(report);
+  }
+
+  const data = toReportPresentationData(report);
+
+  switch (format) {
+    case "markdown":
+      return generateMarkdownExport(data);
+    case "plain-text":
+      return generatePlainTextExport(data);
+  }
+}
+
+function exportMimeType(format: ResearchExportFormat): string {
+  switch (format) {
+    case "markdown":
+      return "text/markdown; charset=utf-8";
+    case "json":
+      return "application/json; charset=utf-8";
+    case "plain-text":
+      return "text/plain; charset=utf-8";
+  }
+}
+
+function exportFilename(report: ResearchReport, format: ResearchExportFormat): string {
+  const reportId = report.id.replace(/[^A-Za-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "");
+  const date = (report.completedAt ?? report.createdAt).slice(0, 10);
+  const extension = format === "markdown" ? "md" : format === "json" ? "json" : "txt";
+
+  return `research-${reportId || "report"}-${date}.${extension}`;
 }
 
 export async function upsertReportFeedbackOperation(

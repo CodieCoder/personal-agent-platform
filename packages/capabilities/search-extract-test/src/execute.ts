@@ -339,15 +339,17 @@ function selectUrl(
     return { kind: "none", source: "none" };
   }
 
-  const resultIndex = results.findIndex((result) => result.url === selectedUrl);
+  const resultIndex = findSelectedResultIndex(selectedUrl, results);
 
   if (resultIndex >= 0) {
+    const selectedResult = results[resultIndex] ?? null;
+
     return {
       kind: "selected",
       source: "search_result",
-      url: selectedUrl,
+      url: selectedResult?.url ?? selectedUrl,
       selectedResultIndex: resultIndex,
-      selectedResult: results[resultIndex] ?? null,
+      selectedResult,
     };
   }
 
@@ -362,6 +364,102 @@ function selectUrl(
   }
 
   return { kind: "unsupported", url: selectedUrl };
+}
+
+function findSelectedResultIndex(selectedUrl: FetchUrl, results: SearchResult[]): number {
+  const exactIndex = results.findIndex((result) => result.url === selectedUrl);
+
+  if (exactIndex >= 0) {
+    return exactIndex;
+  }
+
+  const selectedCanonicalUrl = canonicalizeComparableUrl(selectedUrl);
+
+  if (selectedCanonicalUrl === null) {
+    return -1;
+  }
+
+  return results.findIndex(
+    (result) => canonicalizeComparableUrl(result.url) === selectedCanonicalUrl,
+  );
+}
+
+const trackingParameterNames = new Set([
+  "fbclid",
+  "gclid",
+  "dclid",
+  "msclkid",
+  "mc_cid",
+  "mc_eid",
+  "igshid",
+  "srsltid",
+]);
+
+function canonicalizeComparableUrl(value: FetchUrl): string | null {
+  const match = /^(https?):\/\/([^/?#]+)([^?#]*)(?:\?([^#]*))?(?:#.*)?$/iu.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const protocol = (match[1] ?? "").toLowerCase();
+  const authority = normalizeUrlAuthority(match[2] ?? "", protocol);
+
+  if (!authority) {
+    return null;
+  }
+
+  const rawPath = match[3] ?? "";
+  const path = rawPath === "" ? "/" : rawPath.length > 1 ? rawPath.replace(/\/+$/u, "") : rawPath;
+  const query = normalizeUrlQuery(match[4] ?? "");
+
+  return `${protocol}://${authority}${path}${query ? `?${query}` : ""}`;
+}
+
+function normalizeUrlAuthority(value: string, protocol: string): string | null {
+  if (value.includes("@")) {
+    return null;
+  }
+
+  const normalized = value.toLowerCase().replace(/\.$/u, "");
+
+  if (protocol === "https" && normalized.endsWith(":443")) {
+    return normalized.slice(0, -4);
+  }
+
+  if (protocol === "http" && normalized.endsWith(":80")) {
+    return normalized.slice(0, -3);
+  }
+
+  return normalized;
+}
+
+function normalizeUrlQuery(value: string): string {
+  return value
+    .split("&")
+    .filter(Boolean)
+    .filter((parameter) => !isTrackingParameter(parameterKey(parameter)))
+    .sort((left, right) => left.localeCompare(right))
+    .join("&");
+}
+
+function parameterKey(parameter: string): string {
+  const separatorIndex = parameter.indexOf("=");
+  const rawKey = separatorIndex >= 0 ? parameter.slice(0, separatorIndex) : parameter;
+  return safeDecodeURIComponent(rawKey);
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value.replace(/\+/gu, " "));
+  } catch {
+    return value;
+  }
+}
+
+function isTrackingParameter(key: string): boolean {
+  const normalizedKey = key.toLowerCase();
+  return normalizedKey.startsWith("utm_") || trackingParameterNames.has(normalizedKey);
 }
 
 function assertWorkspaceMatches(
